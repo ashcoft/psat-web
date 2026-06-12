@@ -1,0 +1,30 @@
+# ------------------------------------------------------------------
+# AUTO-CONVERTED FROM MATLAB BY tools/matlab_to_python.py
+# Source: third-party/psat/@WNclass\vwplot.m  (upstream PSAT, GPL-2.0+)
+# WARNING: This is a mechanical, BEST-EFFORT textual conversion.
+# It is NOT a runnable Python port. Manual review is REQUIRED.
+# ------------------------------------------------------------------
+def vwplot(a):
+
+global Settings
+
+if not Settings.init
+  fm_choice('No data found. Solve Power Flow first.',2)
+  return
+if not a.n
+  fm_choice('No Wind data found!',2)
+  return
+
+# plot Wind speeds
+colors = {'b','g','r','c','m','y','k'}
+figure
+hold on
+for i in range(1, a.n+1):
+  leg{i} = ['v_{w',num2str(i),'}']
+  plot(a.speed(i).time,a.speed(i).vw*a.con(i,2),colors{rem(i-1,7)+1})
+hold off
+legend(leg)
+title('Wind Speeds')
+xlabel('time [s]')
+ylabel('v_w [m/s]')
+box('on')

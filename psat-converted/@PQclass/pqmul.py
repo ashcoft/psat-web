@@ -1,0 +1,16 @@
+# ------------------------------------------------------------------
+# AUTO-CONVERTED FROM MATLAB BY tools/matlab_to_python.py
+# Source: third-party/psat/@PQclass\pqmul.m  (upstream PSAT, GPL-2.0+)
+# WARNING: This is a mechanical, BEST-EFFORT textual conversion.
+# It is NOT a runnable Python port. Manual review is REQUIRED.
+# ------------------------------------------------------------------
+function a = pqmul(a,idx,k)
+
+if not a.n, return, end
+
+if isnumeric(idx)
+  a.con(idx,4) = k*a.con(idx,4)
+  a.con(idx,5) = k*a.con(idx,5)
+elseif strcmp(idx,'all')
+  a.con(:,4) = k*a.con(:,4)
+  a.con(:,5) = k*a.con(:,5)
