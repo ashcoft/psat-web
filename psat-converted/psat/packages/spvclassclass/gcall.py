@@ -1,0 +1,35 @@
+# Module: psat.packages.spvclassclass.gcall
+# Refactored from psat-converted
+# ------------------------------------------------------------------
+# WARNING: This is a mechanical, BEST-EFFORT textual conversion.
+# It is NOT a runnable Python port. Manual review is REQUIRED.
+# ------------------------------------------------------------------
+def gcall(a):
+
+global DAE 
+
+if not a.n, return, end
+
+
+id = DAE.x(a.id)
+iq = DAE.x(a.iq)
+
+
+V = DAE.y(a.vbus)
+t = DAE.y(a.bus)
+st = sin(t)
+ct = cos(t)
+
+
+vd = -V.*st
+vq =  V.*ct
+
+
+
+p = vd.*id + vq.*iq
+q = vq.*id - vd.*iq
+
+DAE.g = DAE.g ...
+        - sparse(a.bus,1, a.u.*p,DAE.m,1) ...
+        - sparse(a.vbus,1, a.u.*q,DAE.m,1)...
+        + sparse(a.vref,1, a.u.*a.dat(:,1)-DAE.y(a.vref),DAE.m,1)

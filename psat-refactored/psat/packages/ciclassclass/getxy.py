@@ -1,0 +1,11 @@
+# Module: psat.packages.ciclassclass.getxy
+# Refactored from psat-converted
+# ------------------------------------------------------------------
+# WARNING: This is a mechanical, BEST-EFFORT textual conversion.
+# It is NOT a runnable Python port. Manual review is REQUIRED.
+# ------------------------------------------------------------------
+function [x,y] = getxy(a,bus,x,y)
+
+if not a.n, return, end
+
+y = [y; a.delta; a.omega]

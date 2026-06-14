@@ -1,0 +1,17 @@
+# Module: psat.packages.swclassclass.gams
+# Refactored from psat-converted
+# ------------------------------------------------------------------
+# WARNING: This is a mechanical, BEST-EFFORT textual conversion.
+# It is NOT a runnable Python port. Manual review is REQUIRED.
+# ------------------------------------------------------------------
+import numpy as np
+
+function [n,idx,data] = gams(a)
+
+global Bus
+
+n = int2str(a.n)
+idx = sparse(a.bus,[1:a.n],1,Bus.n,a.n)
+data = getnp.zeros((Bus))
+if a.n
+  data(a.bus) = a.u.*a.con(:,11)

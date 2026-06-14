@@ -1,0 +1,31 @@
+# Module: psat.packages.arclassclass.growth
+# Refactored from psat-converted
+# ------------------------------------------------------------------
+# WARNING: This is a mechanical, BEST-EFFORT textual conversion.
+# It is NOT a runnable Python port. Manual review is REQUIRED.
+# ------------------------------------------------------------------
+def growth(a, type):
+
+global Bus PQ PV SW Demand Supply
+
+rr = a.con(:,6)/100
+
+if sum(abs(rr)) < 1e-5
+  fm_print('Likely no annual growth has been defined.',2)
+  return
+
+switch type
+ case 'area'
+  idx = a.int(getarea(Bus,0,0))
+ case 'region'
+  idx = a.int(getregion(Bus,0,0))
+    
+ddata = growth(PQ,rr,idx)
+sdata = growth(PV,rr,idx)
+sdata = [sdata; growth(SW,rr,idx)]
+
+Demand = remove(Demand,[1:Demand.n])
+Demand  = add(Demand,ddata)
+
+Supply = remove(Supply,[1:Supply.n])
+Supply = add(Supply,sdata)

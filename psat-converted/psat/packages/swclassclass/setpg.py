@@ -1,0 +1,17 @@
+# Module: psat.packages.swclassclass.setpg
+# Refactored from psat-converted
+# ------------------------------------------------------------------
+# WARNING: This is a mechanical, BEST-EFFORT textual conversion.
+# It is NOT a runnable Python port. Manual review is REQUIRED.
+# ------------------------------------------------------------------
+function a = setpg(a,idx,p)
+
+if not a.n, return, end
+if isempty(idx), return, end
+if isnumeric(idx)
+  jdx = idx(find(a.u(idx)))
+elseif strcmp(idx,'all')
+  jdx = find(a.u)
+
+a.pg(jdx) = a.u(jdx).*p(jdx)
+#a.store(jdx,10) = a.pg(jdx);

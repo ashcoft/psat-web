@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psat"
+version = "2.0"
+description = "Refactored Python port of PSAT (Power System Analysis Toolbox)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[tool.setuptools.packages.find]
+include = ["psat*"]
