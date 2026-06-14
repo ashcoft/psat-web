@@ -159,10 +159,83 @@ export interface ModeResult {
 // Settings
 export interface Settings {
   baseFrequency: number;
+  basePower: number;
   tolerance: number;
   maxIterations: number;
   solutionMethod: 'nr' | 'dc' | 'fast-decoupled';
   flatStart: boolean;
   beeps: boolean;
   theme: 'light' | 'dark' | 'custom';
+  reportFormat: 'txt' | 'html';
+}
+
+export const defaultSettings: Settings = {
+  baseFrequency: 50,
+  basePower: 100,
+  tolerance: 1e-8,
+  maxIterations: 100,
+  solutionMethod: 'nr',
+  flatStart: true,
+  beeps: false,
+  theme: 'light',
+  reportFormat: 'txt',
+};
+
+// CPF (Continuation Power Flow) types
+export interface CPFParams {
+  stepSize: number;
+  maxSteps: number;
+  targetLambda: number;
+  voltageLimit: number;
+  method: 'perp' | 'local';
+  showProgress: boolean;
+}
+
+export interface CPFPoint {
+  lambda: number;
+  busVoltages: { [busId: string]: number };
+  busAngles: { [busId: string]: number };
+}
+
+export interface CPFResult {
+  points: CPFPoint[];
+  criticalLambda: number;
+  criticalBus: string;
+  converged: boolean;
+  noseCurve: { lambda: number; voltage: number }[];
+}
+
+// OPF (Optimal Power Flow) types
+export interface OPFParams {
+  objective: 'min-cost' | 'min-losses' | 'min-gen';
+  weightActive: number;
+  weightReactive: number;
+}
+
+export interface OPFResult {
+  converged: boolean;
+  iterations: number;
+  objectiveValue: number;
+  busResults: BusResult[];
+  lineResults: LineResult[];
+  genResults: GeneratorResult[];
+  shadowPrices: { [busId: string]: number };
+  totalCost: number;
+}
+
+// Full analysis configuration
+export interface AnalysisConfig {
+  powerFlow: {
+    method: 'nr' | 'dc' | 'fast-decoupled';
+    tolerance: number;
+    maxIterations: number;
+    flatStart: boolean;
+  };
+  cpf: CPFParams;
+  simulation: SimulationParams;
+  eigenvalue: {
+    matrixType: 'powerflow' | 'state';
+    neig: number;
+  };
+  opf: OPFParams;
 }
