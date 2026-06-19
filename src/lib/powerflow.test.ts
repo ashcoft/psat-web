@@ -36,6 +36,8 @@ const createBaseSystem = (buses: Bus[], lines: Line[]): PowerSystem => ({
   generators: [],
   shunts: [],
   areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
+        baseMVA: 100,
+        baseFreq: 60,
 });
 
 describe('PowerFlowSolver', () => {
@@ -75,10 +77,10 @@ describe('PowerFlowSolver', () => {
       expect(result.maxMismatch).toBeGreaterThanOrEqual(0);
       expect(result.busResults).toHaveLength(system.buses.length);
       expect(result.lineResults).toHaveLength(system.lines.length);
-      expect(result.genResults).toHaveLength(system.generators.length);
+      expect(result.generatorResults).toHaveLength(system.generators.length);
       expect(result.losses).toBeDefined();
       expect(typeof result.losses.real).toBe('number');
-      expect(typeof result.losses.reactive).toBe('number');
+      expect(typeof result.losses.imag).toBe('number');
     });
 
     it('should handle system with only slack bus', () => {
@@ -97,19 +99,21 @@ describe('PowerFlowSolver', () => {
         transformers: [],
         loads: [],
         generators: [
-          { id: 'G1', busId: '1', pGen: 0.5, qGen: 0, vSetpoint: 1.0, active: true },
-          { id: 'G2', busId: '2', pGen: 0.3, qGen: 0, vSetpoint: 1.05, active: true },
+          { id: 'G1', bus: '1', pg: 0.5, qg: 0, v: 1.0, pmax: 1, pmin: 0, qmax: 0.5, qmin: -0.5, active: true },
+          { id: 'G2', bus: '2', pg: 0.3, qg: 0, v: 1.05, pmax: 1, pmin: 0, qmax: 0.5, qmin: -0.5, active: true },
         ],
         shunts: [],
         areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
+        baseMVA: 100,
+        baseFreq: 60,
       };
 
       const solver = new PowerFlowSolver(system);
       const result = solver.solve();
 
-      expect(result.genResults).toHaveLength(2);
-      expect(result.genResults[0].pGen).toBe(0.5);
-      expect(result.genResults[1].pGen).toBe(0.3);
+      expect(result.generatorResults).toHaveLength(2);
+      expect(result.generatorResults[0].pg).toBe(0.5);
+      expect(result.generatorResults[1].pg).toBe(0.3);
     });
 
     it('should handle loads', () => {
@@ -117,10 +121,12 @@ describe('PowerFlowSolver', () => {
         buses: [createBus('1', 'slack'), createBus('2', 'pq', 1)],
         lines: [createLine('L12', '1', '2')],
         transformers: [],
-        loads: [{ id: 'LD1', busId: '2', pDemand: 0.5, qDemand: 0.2, active: true }],
+        loads: [{ id: 'LD1', bus: '2', pl: 0.5, ql: 0.2, active: true }],
         generators: [],
         shunts: [],
         areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
+        baseMVA: 100,
+        baseFreq: 60,
       };
 
       const solver = new PowerFlowSolver(system);
@@ -136,8 +142,10 @@ describe('PowerFlowSolver', () => {
         transformers: [],
         loads: [],
         generators: [],
-        shunts: [{ id: 'SH1', busId: '2', g: 0.01, b: 0.02, active: true }],
+        shunts: [{ id: 'SH1', bus: '2', g: 0.01, b: 0.02, active: true }],
         areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
+        baseMVA: 100,
+        baseFreq: 60,
       };
 
       const solver = new PowerFlowSolver(system);

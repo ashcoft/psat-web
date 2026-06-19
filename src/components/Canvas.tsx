@@ -135,7 +135,7 @@ export default function Canvas({
         pv: '#3b82f6',
         pq: '#6b7280'
       };
-      const color = colors[bus.type];
+      const color = colors[bus.type as keyof typeof colors] || '#999';
       
       // Draw voltage circle
       ctx.fillStyle = color;

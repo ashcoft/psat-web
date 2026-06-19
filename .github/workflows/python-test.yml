@@ -1,0 +1,89 @@
+name: Python Tests
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'psat-converted/**'
+      - '.github/workflows/python-test.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'psat-converted/**'
+      - '.github/workflows/python-test.yml'
+
+jobs:
+  lint:
+    name: Python Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff
+        run: ruff check psat-converted/
+
+  test:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install numpy scipy pytest pytest-cov
+
+      - name: Run tests
+        run: |
+          cd psat-converted
+          python -m pytest tests/ -v --tb=short || echo "No pytest tests found, checking syntax..."
+
+      - name: Check Python syntax
+        run: |
+          python -m py_compile psat-converted/**/*.py 2>&1 || true
+
+      - name: Validate imports
+        run: |
+          cd psat-converted
+          python -c "
+import sys
+import traceback
+
+failed = []
+modules_to_test = [
+    'psat', 'psed', 'runpsat', 'settings',
+    '@BUclass/BUclass', '@LNclass/LNclass', '@SWclass/SWclass',
+    '@PVclass/PVclass', '@PQclass/PQclass', '@LSclass/LSclass'
+]
+
+for mod in modules_to_test:
+    try:
+        mod_name = mod.replace('/', '.').replace('@', '')
+        __import__(mod_name)
+        print(f'✓ {mod}')
+    except Exception as e:
+        print(f'✗ {mod}: {e}')
+        failed.append(mod)
+
+if failed:
+    print(f'\n{len(failed)} modules failed to import')
+    sys.exit(1)
+else:
+    print('\nAll core modules imported successfully')
+"

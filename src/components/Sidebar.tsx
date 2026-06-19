@@ -190,7 +190,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         {/* Areas Section */}
         <Section id="areas" title="Areas & Regions" icon="▣" expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="space-y-2">
-            {system.areas.map(area => (
+            {(system.areas || []).map(area => (
               <div key={area.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                 <span className="text-sm">{area.name}</span>
                 <span className="text-xs text-gray-500">#{area.id}</span>
