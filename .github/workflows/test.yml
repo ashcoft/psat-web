@@ -36,7 +36,7 @@ jobs:
         if: matrix.node-version == '24.x'
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         if: matrix.node-version == '24.x'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
