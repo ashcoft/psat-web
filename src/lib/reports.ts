@@ -3,12 +3,11 @@
  * Export power system analysis results to various formats
  */
 
-import { PowerSystem } from '@/types';
-import { PowerFlowResult } from '@/types';
-import { OPFResult } from '@/types/opf';
-import { FaultStudyResult } from '@/types/fault';
-import { TimeSeriesResult } from '@/types/timeseries';
-import { StabilityAnalysisResult } from '@/types/stability';
+import { PowerSystem, PowerFlowResult } from '@/types';
+import { OPFResult } from './opf';
+import { FaultStudyResult } from './fault';
+import { TimeSeriesResult } from './timeseries';
+import { StabilityAnalysisResult } from './stability';
 
 // Report data structures
 export interface ReportData {

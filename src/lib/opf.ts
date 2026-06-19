@@ -3,8 +3,45 @@
  * Minimizes generation cost while satisfying power flow constraints
  */
 
-import { PowerSystem, Generator, Bus, Line, OPFResult, GeneratorCost } from '@/types';
+import { PowerSystem, Generator, Bus, Line } from '@/types';
 import { solveNewtonRaphson, buildYBus } from './powerflow-methods';
+
+// OPF Result type
+export interface OPFResult {
+  success: boolean;
+  totalCost: number;
+  generatorResults: {
+    generator: string;
+    bus: string;
+    pg: number;
+    qg: number;
+    v: number;
+    status?: string;
+  }[];
+  busResults?: {
+    bus: string;
+    v: number;
+    angle: number;
+    pg: number;
+    qg: number;
+    pl: number;
+    ql: number;
+  }[];
+  lineResults?: {
+    line: string;
+    fromBus: string;
+    toBus: string;
+    pFrom: number;
+    qFrom: number;
+    pTo: number;
+    qTo: number;
+    loading: number;
+  }[];
+  elapsedTime: number;
+  iterations?: number;
+  message?: string;
+  losses?: number;
+}
 
 // Cost function types
 export type CostModelType = 'polynomial' | 'piecewise' | 'exponential';
@@ -275,7 +312,7 @@ export function solveDCOPF(
     elapsedTime: performance.now() - startTime,
     busResults: pfResult.busResults,
     lineResults: pfResult.lineResults,
-    losses: pfResult.losses
+    losses: typeof pfResult.losses === 'number' ? pfResult.losses : 0
   };
 }
 
@@ -346,7 +383,7 @@ export function solveACOPF(
                 totalCost: newTotalCost,
                 busResults: testPf.busResults,
                 lineResults: testPf.lineResults,
-                losses: testPf.losses,
+                losses: typeof testPf.losses === 'number' ? testPf.losses : 0,
                 elapsedTime: performance.now() - startTime
               };
               currentCost = newTotalCost;

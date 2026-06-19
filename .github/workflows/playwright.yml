@@ -1,0 +1,65 @@
+name: Playwright E2E Tests
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - 'psat-converted/**'
+  pull_request:
+    branches: [main, master]
+    paths-ignore:
+      - 'psat-converted/**'
+
+jobs:
+  playwright:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Run dev server
+        run: npm run dev &
+        env:
+          PORT: 3456
+        shell: bash
+        timeout-minutes: 5
+
+      - name: Wait for dev server
+        run: npx wait-on http://localhost:3456 --timeout 60000
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload test screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-screenshots
+          path: playwright/screenshots/
+          retention-days: 7

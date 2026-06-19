@@ -50,6 +50,8 @@ export interface CPFHistory {
   };
   bifurcationType?: 'saddle-node' | 'limit-induced';
   pvCurve: { lambda: number; v: number }[][];
+  vCurve: { lambda: number; v: number }[];
+  converged: boolean;
 }
 
 export interface VoltageCollapseResult {

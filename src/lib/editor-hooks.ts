@@ -9,10 +9,8 @@ import {
   Bus, 
   Line, 
   Generator, 
-  Load, 
-  Transformer 
+  Load 
 } from '@/types';
-import { getSymbolsByCategory, IECSymbolCategory } from '@/lib/symbols';
 
 // Selection state
 export interface SelectionState {
@@ -66,6 +64,12 @@ export function useEditor(initialSystem?: PowerSystem) {
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  
+  // Use refs for state to avoid dependency issues - update via effect
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
 
   // Save to history
   const saveToHistory = useCallback((description: string) => {
@@ -228,7 +232,7 @@ export function useEditor(initialSystem?: PowerSystem) {
 
   // Delete selected element
   const deleteSelected = useCallback(() => {
-    const { selection } = state;
+    const selection = stateRef.current.selection;
     if (!selection.type || !selection.id) return;
     
     saveToHistory('Delete element');
@@ -272,7 +276,7 @@ export function useEditor(initialSystem?: PowerSystem) {
         selection: { type: null, id: null }
       };
     });
-  }, [state.selection, saveToHistory]);
+  }, [saveToHistory]);
 
   // Select element
   const select = useCallback((type: SelectionState['type'], id: string | null) => {
@@ -342,11 +346,11 @@ export function useEditor(initialSystem?: PowerSystem) {
 
   // Complete line drawing
   const completeLineDrawing = useCallback((busId: string) => {
-    const { lineStartBus } = state;
+    const lineStartBus = stateRef.current.lineStartBus;
     if (lineStartBus) {
       addLine(lineStartBus, busId);
     }
-  }, [state.lineStartBus, addLine]);
+  }, [addLine]);
 
   // Copy/Paste
   const copy = useCallback(() => {
@@ -357,7 +361,7 @@ export function useEditor(initialSystem?: PowerSystem) {
   }, []);
 
   const paste = useCallback(() => {
-    const { clipboard } = state;
+    const clipboard = stateRef.current.clipboard;
     if (!clipboard) return;
     
     saveToHistory('Paste');
@@ -365,7 +369,7 @@ export function useEditor(initialSystem?: PowerSystem) {
       ...prev,
       system: JSON.parse(JSON.stringify(clipboard))
     }));
-  }, [state.clipboard, saveToHistory]);
+  }, [saveToHistory]);
 
   return {
     state,
