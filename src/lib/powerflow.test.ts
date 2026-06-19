@@ -1,50 +1,63 @@
 import { describe, it, expect } from 'vitest';
 import { PowerFlowSolver, createDefaultSystem } from './powerflow';
-import { PowerSystem } from '@/types';
+import { PowerSystem, Bus, Line } from '@/types';
+
+const createBus = (id: string, type: 'slack' | 'pv' | 'pq', x: number = 0): Bus => ({
+  id,
+  name: `${type.toUpperCase()} Bus ${id}`,
+  type,
+  voltage: type === 'slack' ? 1.0 : type === 'pv' ? 1.05 : 1.0,
+  angle: 0,
+  vmin: 0.9,
+  vmax: 1.1,
+  area: 1,
+  region: 1,
+  x,
+  y: 0,
+  active: true,
+});
+
+const createLine = (id: string, fromBus: string, toBus: string, active: boolean = true): Line => ({
+  id,
+  fromBus,
+  toBus,
+  resistance: 0.02,
+  reactance: 0.04,
+  susceptance: 0,
+  rating: 100,
+  active,
+});
+
+const createBaseSystem = (buses: Bus[], lines: Line[]): PowerSystem => ({
+  buses,
+  lines,
+  transformers: [],
+  loads: [],
+  generators: [],
+  shunts: [],
+  areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
+});
 
 describe('PowerFlowSolver', () => {
   describe('buildYBus', () => {
     it('should build YBus matrix for a simple system', () => {
-      const system: PowerSystem = {
-        buses: [
-          { id: '1', name: 'Slack', type: 'slack', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 0, y: 0, active: true },
-          { id: '2', name: 'PQ', type: 'pq', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 1, y: 0, active: true },
-        ],
-        lines: [
-          { id: 'L12', fromBus: '1', toBus: '2', resistance: 0.02, reactance: 0.04, susceptance: 0, rating: 100, active: true },
-        ],
-        transformers: [],
-        loads: [],
-        generators: [],
-        shunts: [],
-        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }]
-      };
+      const system = createBaseSystem(
+        [createBus('1', 'slack'), createBus('2', 'pq', 1)],
+        [createLine('L12', '1', '2')]
+      );
 
       const solver = new PowerFlowSolver(system);
       solver.buildYBus();
-      
-      // Test passes if no error is thrown
       expect(true).toBe(true);
     });
 
     it('should skip inactive lines', () => {
-      const system: PowerSystem = {
-        buses: [
-          { id: '1', name: 'Slack', type: 'slack', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 0, y: 0, active: true },
-          { id: '2', name: 'PQ', type: 'pq', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 1, y: 0, active: true },
-        ],
-        lines: [
-          { id: 'L12', fromBus: '1', toBus: '2', resistance: 0.02, reactance: 0.04, susceptance: 0, rating: 100, active: false },
-        ],
-        transformers: [],
-        loads: [],
-        generators: [],
-        shunts: [],
-        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }]
-      };
+      const system = createBaseSystem(
+        [createBus('1', 'slack'), createBus('2', 'pq', 1)],
+        [createLine('L12', '1', '2', false)]
+      );
 
       const solver = new PowerFlowSolver(system);
-      // Should not throw when building YBus with inactive line
       expect(() => solver.buildYBus()).not.toThrow();
     });
   });
@@ -69,18 +82,7 @@ describe('PowerFlowSolver', () => {
     });
 
     it('should handle system with only slack bus', () => {
-      const system: PowerSystem = {
-        buses: [
-          { id: '1', name: 'Slack', type: 'slack', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 0, y: 0, active: true },
-        ],
-        lines: [],
-        transformers: [],
-        loads: [],
-        generators: [],
-        shunts: [],
-        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }]
-      };
-
+      const system = createBaseSystem([createBus('1', 'slack')], []);
       const solver = new PowerFlowSolver(system);
       const result = solver.solve();
 
@@ -90,13 +92,8 @@ describe('PowerFlowSolver', () => {
 
     it('should handle multiple generators', () => {
       const system: PowerSystem = {
-        buses: [
-          { id: '1', name: 'Slack', type: 'slack', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 0, y: 0, active: true },
-          { id: '2', name: 'PV', type: 'pv', voltage: 1.05, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 1, y: 0, active: true },
-        ],
-        lines: [
-          { id: 'L12', fromBus: '1', toBus: '2', resistance: 0.02, reactance: 0.04, susceptance: 0, rating: 100, active: true },
-        ],
+        buses: [createBus('1', 'slack'), createBus('2', 'pv', 1)],
+        lines: [createLine('L12', '1', '2')],
         transformers: [],
         loads: [],
         generators: [
@@ -104,7 +101,7 @@ describe('PowerFlowSolver', () => {
           { id: 'G2', busId: '2', pGen: 0.3, qGen: 0, vSetpoint: 1.05, active: true },
         ],
         shunts: [],
-        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }]
+        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
       };
 
       const solver = new PowerFlowSolver(system);
@@ -117,20 +114,13 @@ describe('PowerFlowSolver', () => {
 
     it('should handle loads', () => {
       const system: PowerSystem = {
-        buses: [
-          { id: '1', name: 'Slack', type: 'slack', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 0, y: 0, active: true },
-          { id: '2', name: 'PQ', type: 'pq', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 1, y: 0, active: true },
-        ],
-        lines: [
-          { id: 'L12', fromBus: '1', toBus: '2', resistance: 0.02, reactance: 0.04, susceptance: 0, rating: 100, active: true },
-        ],
+        buses: [createBus('1', 'slack'), createBus('2', 'pq', 1)],
+        lines: [createLine('L12', '1', '2')],
         transformers: [],
-        loads: [
-          { id: 'LD1', busId: '2', pDemand: 0.5, qDemand: 0.2, active: true },
-        ],
+        loads: [{ id: 'LD1', busId: '2', pDemand: 0.5, qDemand: 0.2, active: true }],
         generators: [],
         shunts: [],
-        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }]
+        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
       };
 
       const solver = new PowerFlowSolver(system);
@@ -141,20 +131,13 @@ describe('PowerFlowSolver', () => {
 
     it('should handle shunt elements', () => {
       const system: PowerSystem = {
-        buses: [
-          { id: '1', name: 'Slack', type: 'slack', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 0, y: 0, active: true },
-          { id: '2', name: 'PQ', type: 'pq', voltage: 1.0, angle: 0, vmin: 0.9, vmax: 1.1, area: 1, region: 1, x: 1, y: 0, active: true },
-        ],
-        lines: [
-          { id: 'L12', fromBus: '1', toBus: '2', resistance: 0.02, reactance: 0.04, susceptance: 0, rating: 100, active: true },
-        ],
+        buses: [createBus('1', 'slack'), createBus('2', 'pq', 1)],
+        lines: [createLine('L12', '1', '2')],
         transformers: [],
         loads: [],
         generators: [],
-        shunts: [
-          { id: 'SH1', busId: '2', g: 0.01, b: 0.02, active: true },
-        ],
-        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }]
+        shunts: [{ id: 'SH1', busId: '2', g: 0.01, b: 0.02, active: true }],
+        areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
       };
 
       const solver = new PowerFlowSolver(system);
@@ -177,14 +160,9 @@ describe('PowerFlowSolver', () => {
       expect(system.shunts).toBeDefined();
       expect(system.areas).toBeDefined();
 
-      // Check bus types
       const slackBus = system.buses.find(b => b.type === 'slack');
       expect(slackBus).toBeDefined();
-
-      // Check system has at least one line
       expect(system.lines.length).toBeGreaterThan(0);
-
-      // Check system has generators
       expect(system.generators.length).toBeGreaterThan(0);
     });
   });

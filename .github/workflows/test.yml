@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: ['22.x', '23.x', '24.x']
 
     steps:
       - name: Checkout code
@@ -33,11 +33,11 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
-        if: matrix.node-version == '20.x'
+        if: matrix.node-version == '22.x'
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
-        if: matrix.node-version == '20.x'
+        if: matrix.node-version == '22.x'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/coverage-final.json
