@@ -1,0 +1,11 @@
+Add test workflow with Vitest
+
+- Add Vitest configuration and test setup
+- Add powerflow.test.ts with tests for PowerFlowSolver
+- Add page.test.tsx with tests for HomePage component
+- Add test scripts to package.json
+- Add GitHub Actions workflows:
+  - test.yml: Runs tests on Node 18, 20, 22 with coverage
+  - ci.yml: Runs lint and type check
+  - build.yml: Builds the application
+- Update postcss.config.js for Tailwind v4 compatibility
