@@ -31,35 +31,20 @@ jobs:
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
+        timeout-minutes: 15
 
       - name: Build
         run: npm run build
-
-      - name: Run dev server
-        run: npm run dev &
-        env:
-          PORT: 3456
-        shell: bash
-        timeout-minutes: 5
-
-      - name: Wait for dev server
-        run: npx wait-on http://localhost:3456 --timeout 60000
+        timeout-minutes: 10
 
       - name: Run Playwright tests
-        run: npx playwright test
+        run: npx playwright test --timeout=30000
+        timeout-minutes: 20
 
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results
-          path: playwright-report/
-          retention-days: 7
-
-      - name: Upload test screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-screenshots
-          path: playwright/screenshots/
+          path: test-results/
           retention-days: 7
