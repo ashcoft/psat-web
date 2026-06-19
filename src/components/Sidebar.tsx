@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { PowerSystem } from '@/types';
 
 interface SidebarProps {
@@ -10,23 +10,20 @@ interface SidebarProps {
   onCollapse: () => void;
 }
 
-export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: SidebarProps) {
-  const [expandedSection, setExpandedSection] = useState<string | null>('buses');
-  
-  const Section = ({ 
-    id, 
-    title, 
-    icon, 
-    children 
-  }: { 
-    id: string; 
-    title: string; 
-    icon: string; 
-    children: React.ReactNode;
-  }) => (
+interface SectionProps {
+  id: string;
+  title: string;
+  icon: string;
+  expandedSection: string | null;
+  onToggle: (id: string) => void;
+  children: React.ReactNode;
+}
+
+function Section({ id, title, icon, expandedSection, onToggle, children }: SectionProps) {
+  return (
     <div className="border-b border-gray-200">
       <button
-        onClick={() => setExpandedSection(expandedSection === id ? null : id)}
+        onClick={() => onToggle(id)}
         className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 text-sm font-medium"
       >
         <span className="flex items-center gap-2">
@@ -42,6 +39,14 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
       )}
     </div>
   );
+}
+
+export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: SidebarProps) {
+  const [expandedSection, setExpandedSection] = useState<string | null>('buses');
+  
+  const handleToggle = useCallback((id: string) => {
+    setExpandedSection(prev => prev === id ? null : id);
+  }, []);
 
   return (
     <div className="w-64 bg-gray-100 border-r border-gray-300 flex flex-col">
@@ -60,7 +65,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         {/* Buses Section */}
-        <Section id="buses" title="Buses" icon="◯">
+        <Section id="buses" title="Buses" icon="◯" expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => onAddBus('slack')}
@@ -93,7 +98,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         </Section>
 
         {/* Branches Section */}
-        <Section id="branches" title="Branches" icon="/">
+        <Section id="branches" title="Branches" icon="/" expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={onAddLine}
@@ -124,7 +129,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         </Section>
 
         {/* Devices Section */}
-        <Section id="devices" title="Devices" icon="⊛">
+        <Section id="devices" title="Devices" icon="⊛" expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-4 gap-2">
             <button
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
@@ -161,7 +166,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         </Section>
 
         {/* Controls Section */}
-        <Section id="controls" title="Controls" icon="⚙">
+        <Section id="controls" title="Controls" icon="⚙" expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-4 gap-2">
             <button className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100" title="AVR">
               <span className="text-xl">A</span>
@@ -183,7 +188,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         </Section>
 
         {/* Areas Section */}
-        <Section id="areas" title="Areas & Regions" icon="▣">
+        <Section id="areas" title="Areas & Regions" icon="▣" expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="space-y-2">
             {system.areas.map(area => (
               <div key={area.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">

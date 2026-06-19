@@ -16,6 +16,28 @@ interface ToolbarProps {
   isProcessing: boolean;
 }
 
+interface ToolbarButtonProps {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  shortcut?: string;
+}
+
+function ToolbarButton({ icon, label, onClick, disabled = false, shortcut = '' }: ToolbarButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-1 px-2 py-1.5 text-sm rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
+    >
+      <span className="text-base">{icon}</span>
+      <span className="hidden md:inline">{label}</span>
+    </button>
+  );
+}
+
 export default function Toolbar({
   onNew,
   onOpen,
@@ -29,32 +51,7 @@ export default function Toolbar({
   onRunTimeSim,
   isProcessing
 }: ToolbarProps) {
-  const [history, setHistory] = useState<string[]>(['PSAT v1.0 - Ready']);
   const [status, setStatus] = useState('Ready');
-
-  const ToolbarButton = ({ 
-    icon, 
-    label, 
-    onClick, 
-    disabled = false,
-    shortcut = ''
-  }: { 
-    icon: string; 
-    label: string; 
-    onClick: () => void; 
-    disabled?: boolean;
-    shortcut?: string;
-  }) => (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="flex items-center gap-1 px-2 py-1.5 text-sm rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      title={`${label}${shortcut ? ` (${shortcut})` : ''}`}
-    >
-      <span className="text-base">{icon}</span>
-      <span className="hidden md:inline">{label}</span>
-    </button>
-  );
 
   return (
     <div className="flex items-center justify-between bg-gray-100 border-b border-gray-300 px-2 py-1">

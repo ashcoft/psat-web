@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Ribbon from '@/components/Ribbon';
 import Toolbar from '@/components/Toolbar';
@@ -27,9 +27,42 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
   
-  const addOutput = (message: string) => {
+  // Store system ref for use in callbacks
+  const systemRef = useRef(system);
+  
+  // Update ref when system changes
+  useEffect(() => {
+    systemRef.current = system;
+  }, [system]);
+  
+  const addOutput = useCallback((message: string) => {
     setOutput(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
-  };
+  }, []);
+  
+  const handleRunPowerFlow = useCallback(async () => {
+    setIsProcessing(true);
+    addOutput('Starting Power Flow analysis...');
+    
+    // Simulate calculation delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Import power flow solver
+    const { PowerFlowSolver } = await import('@/lib/powerflow');
+    const solver = new PowerFlowSolver(systemRef.current);
+    
+    try {
+      const results = solver.solve();
+      setPowerFlowResults(results);
+      addOutput(`Power Flow converged: ${results.converged}`);
+      addOutput(`Iterations: ${results.iterations}`);
+      addOutput(`Max Mismatch: ${results.maxMismatch.toExponential(3)}`);
+      addOutput(`Total Losses: ${results.losses.real.toFixed(4)} MW`);
+    } catch (error) {
+      addOutput(`Error: ${error}`);
+    }
+    
+    setIsProcessing(false);
+  }, [addOutput]);
   
   const handleAction = useCallback((action: string) => {
     switch (action) {
@@ -48,32 +81,7 @@ export default function Home() {
       default:
         addOutput(`Action: ${action}`);
     }
-  }, []);
-  
-  const handleRunPowerFlow = async () => {
-    setIsProcessing(true);
-    addOutput('Starting Power Flow analysis...');
-    
-    // Simulate calculation delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Import power flow solver
-    const { PowerFlowSolver } = await import('@/lib/powerflow');
-    const solver = new PowerFlowSolver(system);
-    
-    try {
-      const results = solver.solve();
-      setPowerFlowResults(results);
-      addOutput(`Power Flow converged: ${results.converged}`);
-      addOutput(`Iterations: ${results.iterations}`);
-      addOutput(`Max Mismatch: ${results.maxMismatch.toExponential(3)}`);
-      addOutput(`Total Losses: ${results.losses.real.toFixed(4)} MW`);
-    } catch (error) {
-      addOutput(`Error: ${error}`);
-    }
-    
-    setIsProcessing(false);
-  };
+  }, [handleRunPowerFlow, addOutput]);
   
   const handleUpdateBusPosition = (busId: string, x: number, y: number) => {
     setSystem(prev => ({

@@ -1,0 +1,10 @@
+tree 5a755f6517c2f27dbc0d108ddcbf47c60a6de1bb
+parent ea3bf64a415701696d3901923b7d638bb973f075
+author openhands <openhands@all-hands.dev> 1781885907 +0000
+committer openhands <openhands@all-hands.dev> 1781885907 +0000
+
+Update Node versions to 22, 23, 24 and reduce test duplication
+
+- Change Node version matrix from [18, 20, 22] to [22, 23, 24]
+- Use helper functions to reduce code duplication in tests
+- Fix SonarQube quality gate issues
