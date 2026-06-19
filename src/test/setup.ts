@@ -18,32 +18,47 @@ Object.defineProperty(window, 'matchMedia', {
 
 // Mock ResizeObserver
 class ResizeObserverMock {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-pattern
+  observe() {
+    // Mock observe implementation
+  }
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-pattern
+  unobserve() {
+    // Mock unobserve implementation
+  }
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-pattern
+  disconnect() {
+    // Mock disconnect implementation
+  }
 }
 window.ResizeObserver = ResizeObserverMock;
 
 // Mock HTMLCanvasElement
-HTMLCanvasElement.prototype.getContext = () => ({
-  fillRect: () => {},
-  clearRect: () => {},
-  getImageData: () => ({ data: [] }),
-  putImageData: () => {},
-  createImageData: () => [],
-  setTransform: () => {},
-  drawImage: () => {},
-  save: () => {},
-  restore: () => {},
-  beginPath: () => {},
-  moveTo: () => {},
-  lineTo: () => {},
-  closePath: () => {},
-  stroke: () => {},
-  fill: () => {},
-  translate: () => {},
-  scale: () => {},
-  rotate: () => {},
-  arc: () => {},
-  measureText: () => ({ width: 0 }),
-}) as any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(HTMLCanvasElement.prototype as any).getContext = () => {
+  const noop = () => {
+    // noop
+  };
+  return {
+    fillRect: noop,
+    clearRect: noop,
+    getImageData: () => ({ data: [], width: 0, height: 0 }),
+    putImageData: noop,
+    createImageData: () => ({ data: [], width: 0, height: 0 }),
+    setTransform: noop,
+    drawImage: noop,
+    save: noop,
+    restore: noop,
+    beginPath: noop,
+    moveTo: noop,
+    lineTo: noop,
+    closePath: noop,
+    stroke: noop,
+    fill: noop,
+    translate: noop,
+    scale: noop,
+    rotate: noop,
+    arc: noop,
+    measureText: () => ({ width: 0 }),
+  };
+};
