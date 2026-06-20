@@ -28,11 +28,11 @@ export default function PropertiesPanel({
   const selectedLineData = system.lines.find(l => l.id === selectedLine);
   
   const busResult = selectedBus && powerFlowResults?.busResults 
-    ? powerFlowResults.busResults.find(r => r.id === selectedBus)
+    ? powerFlowResults.busResults.find(r => r.bus === selectedBus)
     : null;
   
   const lineResult = selectedLine && powerFlowResults?.lineResults
-    ? powerFlowResults.lineResults.find(r => r.id === selectedLine)
+    ? powerFlowResults.lineResults.find(r => r.line === selectedLine)
     : null;
 
   return (
@@ -115,12 +115,12 @@ export default function PropertiesPanel({
 
                 {busResult && (
                   <PropertyGroup title="Power Flow Results">
-                    <PropertyRow label="Voltage" value={`${busResult.voltage.toFixed(4)} pu`} />
+                    <PropertyRow label="Voltage" value={`${busResult.v.toFixed(4)} pu`} />
                     <PropertyRow label="Angle" value={`${busResult.angle.toFixed(2)}°`} />
-                    <PropertyRow label="P Gen" value={`${busResult.pGen.toFixed(4)} MW`} />
-                    <PropertyRow label="Q Gen" value={`${busResult.qGen.toFixed(4)} Mvar`} />
-                    <PropertyRow label="P Load" value={`${busResult.pLoad.toFixed(4)} MW`} />
-                    <PropertyRow label="Q Load" value={`${busResult.qLoad.toFixed(4)} Mvar`} />
+                    <PropertyRow label="P Gen" value={`${busResult.pg.toFixed(4)} MW`} />
+                    <PropertyRow label="Q Gen" value={`${busResult.qg.toFixed(4)} Mvar`} />
+                    <PropertyRow label="P Load" value={`${busResult.pl.toFixed(4)} MW`} />
+                    <PropertyRow label="Q Load" value={`${busResult.ql.toFixed(4)} Mvar`} />
                   </PropertyGroup>
                 )}
               </>

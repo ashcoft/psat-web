@@ -72,8 +72,9 @@ export class PowerFlowSolver {
     this.system.lines.forEach(line => {
       if (!line.active) return;
       
-      const i = this.busIndex.get(line.fromBus)!;
-      const j = this.busIndex.get(line.toBus)!;
+      const i = this.busIndex.get(line.fromBus);
+      const j = this.busIndex.get(line.toBus);
+      if (i === undefined || j === undefined) return;
       
       // Y = 1 / (R + jX)
       const z = line.resistance + line.reactance;
@@ -95,14 +96,15 @@ export class PowerFlowSolver {
     });
     
     // Add transformer contributions
-    this.system.transformers.forEach(txf => {
+    (this.system.transformers || []).forEach(txf => {
       if (!txf.active) return;
       
-      const i = this.busIndex.get(txf.fromBus)!;
-      const j = this.busIndex.get(txf.toBus)!;
+      const i = this.busIndex.get(txf.fromBus);
+      const j = this.busIndex.get(txf.toBus);
+      if (i === undefined || j === undefined) return;
       
       // Y = 1 / Z
-      const z = txf.impedance;
+      const z = txf.reactance;
       const yReal = 1 / z;
       const a = txf.tap > 0 ? txf.tap : 1;
       
@@ -118,10 +120,11 @@ export class PowerFlowSolver {
     });
     
     // Add shunt contributions
-    this.system.shunts.forEach(shunt => {
+    (this.system.shunts || []).forEach(shunt => {
       if (!shunt.active) return;
       
-      const i = this.busIndex.get(shunt.busId)!;
+      const i = this.busIndex.get(shunt.bus);
+      if (i === undefined) return;
       this.Ybus[i][i].g += shunt.g;
       this.Ybus[i][i].b += shunt.b;
     });
@@ -149,18 +152,18 @@ export class PowerFlowSolver {
     // Build power injections from generators
     this.system.generators.forEach(gen => {
       if (!gen.active) return;
-      const idx = this.busIndex.get(gen.busId);
+      const idx = this.busIndex.get(gen.bus);
       if (idx !== undefined) {
-        S[idx] = complexAdd(S[idx], complex(gen.pGen, -gen.qGen));
+        S[idx] = complexAdd(S[idx], complex(gen.pg, -gen.qg));
       }
     });
     
     // Subtract loads from power injections
     this.system.loads.forEach(load => {
       if (!load.active) return;
-      const idx = this.busIndex.get(load.busId);
+      const idx = this.busIndex.get(load.bus);
       if (idx !== undefined) {
-        S[idx] = complexAdd(S[idx], complex(-load.pDemand, load.qDemand));
+        S[idx] = complexAdd(S[idx], complex(-load.pl, load.ql));
       }
     });
     
@@ -224,11 +227,13 @@ export class PowerFlowSolver {
       converged,
       iterations,
       maxMismatch,
-      slackAngle: slackBusIdx >= 0 ? Math.atan2(V[slackBusIdx].imag, V[slackBusIdx].real) : 0,
+      // slackAngle: slackBusIdx >= 0 ? Math.atan2(V[slackBusIdx].imag, V[slackBusIdx].real) : 0,
       busResults,
       lineResults,
-      genResults,
-      losses
+      generatorResults: genResults,
+      losses,
+      method: 'Newton-Raphson',
+      elapsedTime: 0
     };
   }
   
@@ -238,25 +243,39 @@ export class PowerFlowSolver {
       const Vang = Math.atan2(V[idx].imag, V[idx].real) * 180 / Math.PI;
       
       return {
-        id: bus.id,
-        voltage: Vmag,
+        bus: bus.id,
+        v: Vmag,
         angle: Vang,
-        pGen: 0,
-        qGen: 0,
-        pLoad: 0,
-        qLoad: 0
+        pg: 0,
+        qg: 0,
+        pl: 0,
+        ql: 0,
+        qshunt: 0
       };
     });
   }
   
   private calculateLineResults(V: Complex[]): LineResult[] {
     return this.system.lines.map(line => {
-      const i = this.busIndex.get(line.fromBus)!;
-      const j = this.busIndex.get(line.toBus)!;
+      const i = this.busIndex.get(line.fromBus);
+      const j = this.busIndex.get(line.toBus);
+      if (i === undefined || j === undefined) {
+        return {
+          line: line.id,
+          fromBus: line.fromBus,
+          toBus: line.toBus,
+          pFrom: 0,
+          qFrom: 0,
+          pTo: 0,
+          qTo: 0,
+          ploss: 0,
+          qloss: 0,
+          loading: 0
+        };
+      }
       
       // Current Iij = Yij * (Vi - Vj)
       const z = line.resistance + line.reactance;
-      const yMag = 1 / Math.sqrt(z * z + 0); // Simplified
       const yReal = line.resistance / (z * z);
       const yImag = -line.reactance / (z * z);
       
@@ -274,11 +293,15 @@ export class PowerFlowSolver {
       const loading = complexAbs(Iij) / line.rating * 100;
       
       return {
-        id: line.id,
+        line: line.id,
+        fromBus: line.fromBus,
+        toBus: line.toBus,
         pFrom: Sij.real,
         qFrom: -Sij.imag,
         pTo: Sji.real,
         qTo: -Sji.imag,
+        ploss: Sij.real + Sji.real,
+        qloss: -Sij.imag - Sji.imag,
         loading
       };
     });
@@ -286,14 +309,16 @@ export class PowerFlowSolver {
   
   private calculateGenResults(): GeneratorResult[] {
     return this.system.generators.map(gen => ({
-      id: gen.id,
-      pGen: gen.pGen,
-      qGen: gen.qGen,
-      vSetpoint: gen.vSetpoint
+      generator: gen.id,
+      bus: gen.bus,
+      pg: gen.pg,
+      qg: gen.qg,
+      v: gen.v,
+      status: 'on' as const
     }));
   }
   
-  private calculateLosses(V: Complex[]): { real: number; reactive: number } {
+  private calculateLosses(V: Complex[]): { real: number; imag: number } {
     let pLoss = 0;
     let qLoss = 0;
     
@@ -311,7 +336,7 @@ export class PowerFlowSolver {
       qLoss += line.reactance * IijMag * IijMag;
     });
     
-    return { real: pLoss, reactive: qLoss };
+    return { real: pLoss, imag: qLoss };
   }
 }
 
@@ -331,14 +356,16 @@ export function createDefaultSystem(): PowerSystem {
     ],
     transformers: [],
     loads: [
-      { id: 'LD3', busId: '3', pDemand: 1.0, qDemand: 0.5, active: true },
-      { id: 'LD4', busId: '4', pDemand: 0.7, qDemand: 0.35, active: true },
+      { id: 'LD3', bus: '3', pl: 1.0, ql: 0.5, active: true },
+      { id: 'LD4', bus: '4', pl: 0.7, ql: 0.35, active: true },
     ],
     generators: [
-      { id: 'G1', busId: '1', pGen: 0.8, qGen: 0, vSetpoint: 1.0, active: true },
-      { id: 'G2', busId: '2', pGen: 0.5, qGen: 0, vSetpoint: 1.05, active: true },
+      { id: 'G1', bus: '1', pg: 0.8, qg: 0, v: 1.0, pmax: 1, pmin: 0, qmax: 0.5, qmin: -0.5, active: true },
+      { id: 'G2', bus: '2', pg: 0.5, qg: 0, v: 1.05, pmax: 1, pmin: 0, qmax: 0.5, qmin: -0.5, active: true },
     ],
     shunts: [],
-    areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }]
+    areas: [{ id: 'A1', name: 'Area 1', slackBus: '1' }],
+    baseMVA: 100,
+    baseFreq: 60
   };
 }

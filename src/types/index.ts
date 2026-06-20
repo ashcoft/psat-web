@@ -1,63 +1,123 @@
-// Power System Component Types
+/**
+ * Power System Types - Comprehensive PSAT/ETAP compatible types
+ * Based on IEC/IEEE standards
+ */
+
+// ============================================================================
+// Core Power System Components
+// ============================================================================
 
 export interface Bus {
   id: string;
   name: string;
-  type: 'slack' | 'pv' | 'pq';
-  voltage: number;
-  angle: number;
-  vmin: number;
-  vmax: number;
+  type: BusType;
+  voltage: number;      // p.u.
+  angle: number;         // radians
+  vmin: number;         // p.u.
+  vmax: number;         // p.u.
   area: number;
   region: number;
-  x: number;
-  y: number;
+  x: number;            // Graphical position
+  y: number;            // Graphical position
   active: boolean;
+  // Extended properties
+  vScheduled?: number;  // Scheduled voltage (p.u.)
+  vbase?: number;        // Base voltage (kV)
+  zone?: number;         // Loss zone
+  owner?: number;        // Ownership
+  comments?: string;
 }
+
+export type BusType = 'slack' | 'pv' | 'pq' | 'isolated';
 
 export interface Line {
   id: string;
+  name?: string;
   fromBus: string;
   toBus: string;
-  resistance: number;
-  reactance: number;
-  susceptance: number;
-  rating: number;
+  resistance: number;    // p.u.
+  reactance: number;     // p.u.
+  susceptance: number;   // p.u.
+  rating: number;        // MVA
+  ratingA?: number;      // Emergency rating A (MVA)
+  ratingB?: number;      // Emergency rating B (MVA)
+  length?: number;       // km
+  cost?: number;         // $/mile
   active: boolean;
+  lineType?: LineType;
 }
+
+export type LineType = 'overhead' | 'underground' | 'cable' | 'tunnel';
 
 export interface Transformer {
   id: string;
+  name?: string;
   fromBus: string;
   toBus: string;
-  tap: number;
-  phase: number;
-  impedance: number;
+  resistance: number;    // p.u.
+  reactance: number;     // p.u.
+  tap: number;           // Tap position (p.u.)
+  shift: number;         // Phase shift angle (degrees)
+  rating: number;        // MVA
+  vhigh?: number;        // High voltage (kV)
+  vlow?: number;         // Low voltage (kV)
+  vectorGroup?: VectorGroup;
+  connection?: TransformerConnection;
   active: boolean;
+}
+
+export type VectorGroup = 'Yy0' | 'Yy6' | 'Dy1' | 'Dy11' | 'Dy5' | 'Dy7' | 'Yy4' | 'Yy8';
+export type TransformerConnection = 'wye' | 'delta' | 'zigzag';
+
+export interface Generator {
+  id: string;
+  name?: string;
+  bus: string;
+  pg: number;            // MW
+  qg: number;            // MVAR
+  v: number;             // p.u.
+  pmax: number;          // MW
+  pmin: number;          // MW
+  qmax: number;          // MVAR
+  qmin: number;          // MVAR
+  cost?: GeneratorCost;
+  model?: string;
+  active: boolean;
+}
+
+export interface GeneratorCost {
+  model: 'polynomial' | 'piecewise';
+  c2?: number;
+  c1?: number;
+  c0?: number;
+  startup?: number;
+  shutdown?: number;
+  piecewise?: { p: number; f: number }[];
 }
 
 export interface Load {
   id: string;
-  busId: string;
-  pDemand: number;
-  qDemand: number;
+  name?: string;
+  bus: string;
+  pl: number;            // MW
+  ql: number;            // MVAR
+  cl?: number;
+  gl?: number;
+  bl?: number;
+  demandModel?: DemandModel;
   active: boolean;
 }
 
-export interface Generator {
-  id: string;
-  busId: string;
-  pGen: number;
-  qGen: number;
-  vSetpoint: number;
-  active: boolean;
-}
+export type DemandModel = 'constant-power' | 'constant-impedance' | 'constant-current' | 'mixed';
 
 export interface Shunt {
   id: string;
-  busId: string;
+  name?: string;
+  bus: string;
   g: number;
   b: number;
+  vlow?: number;
+  vhigh?: number;
   active: boolean;
 }
 
@@ -67,65 +127,99 @@ export interface Area {
   slackBus: string;
 }
 
+// ============================================================================
+// Complete Power System Model
+// ============================================================================
+
 export interface PowerSystem {
   buses: Bus[];
   lines: Line[];
   transformers: Transformer[];
-  loads: Load[];
   generators: Generator[];
-  shunts: Shunt[];
-  areas: Area[];
+  loads: Load[];
+  shunts?: Shunt[];
+  areas?: Area[];
+  baseMVA: number;
+  baseFreq: number;
+  slackBus?: string;
+  name?: string;
 }
 
+// ============================================================================
 // Power Flow Results
-export interface PowerFlowResult {
-  converged: boolean;
-  iterations: number;
-  maxMismatch: number;
-  slackAngle: number;
-  busResults: BusResult[];
-  lineResults: LineResult[];
-  genResults: GeneratorResult[];
-  losses: {
-    real: number;
-    reactive: number;
-  };
-}
+// ============================================================================
 
 export interface BusResult {
-  id: string;
-  voltage: number;
+  bus: string;
+  v: number;
   angle: number;
-  pGen: number;
-  qGen: number;
-  pLoad: number;
-  qLoad: number;
+  pg: number;
+  qg: number;
+  pl: number;
+  ql: number;
+  qshunt: number;
 }
 
 export interface LineResult {
-  id: string;
+  line: string;
+  fromBus: string;
+  toBus: string;
+  pFrom: number;
+  qFrom: number;
+  pTo: number;
+  qTo: number;
+  ploss: number;
+  qloss: number;
+  loading: number;
+}
+
+export interface TransformerResult {
+  transformer: string;
+  fromBus: string;
+  toBus: string;
   pFrom: number;
   qFrom: number;
   pTo: number;
   qTo: number;
   loading: number;
+  tap: number;
 }
 
 export interface GeneratorResult {
-  id: string;
-  pGen: number;
-  qGen: number;
-  vSetpoint: number;
+  generator: string;
+  bus: string;
+  pg: number;
+  qg: number;
+  v: number;
+  status: 'on' | 'off' | 'at limit';
 }
 
+export interface PowerFlowResult {
+  converged: boolean;
+  iterations: number;
+  maxMismatch: number;
+  losses: { real: number; imag: number };
+  busResults: BusResult[];
+  lineResults: LineResult[];
+  transformerResults?: TransformerResult[];
+  generatorResults: GeneratorResult[];
+  elapsedTime: number;
+  method: PowerFlowMethod;
+}
+
+export type PowerFlowMethod = 'Newton-Raphson' | 'Fast-Decoupled' | 'DC' | 'Gauss-Seidel' | 'HOLAR' | 'Hybrid';
+
+// ============================================================================
 // Time Domain Simulation
+// ============================================================================
+
 export interface SimulationParams {
   tStart: number;
   tEnd: number;
   stepSize: number;
-  faultLocation: string;
-  faultTime: number;
-  faultDuration: number;
+  faultLocation?: string;
+  faultTime?: number;
+  faultDuration?: number;
 }
 
 export interface SimulationResult {
@@ -134,9 +228,21 @@ export interface SimulationResult {
   busAngles: { [busId: string]: number[] };
   machineAngles: { [genId: string]: number[] };
   machineSpeeds: { [genId: string]: number[] };
+  events?: SimulationEvent[];
+  elapsedTime: number;
 }
 
+export interface SimulationEvent {
+  time: number;
+  type: string;
+  element: string;
+  description: string;
+}
+
+// ============================================================================
 // Eigenvalue Analysis
+// ============================================================================
+
 export interface EigenvalueResult {
   eigenvalues: ComplexNumber[];
   dampingRatios: number[];
@@ -156,7 +262,10 @@ export interface ModeResult {
   participationFactors: { [busId: string]: number };
 }
 
+// ============================================================================
 // Settings
+// ============================================================================
+
 export interface Settings {
   baseFrequency: number;
   tolerance: number;
@@ -165,4 +274,96 @@ export interface Settings {
   flatStart: boolean;
   beeps: boolean;
   theme: 'light' | 'dark' | 'custom';
+}
+
+// ============================================================================
+// IEC Symbol Types
+// ============================================================================
+
+export type IECSymbolType = 
+  | 'bus'
+  | 'generator'
+  | 'load'
+  | 'motor'
+  | 'shunt'
+  | 'capacitor'
+  | 'reactor'
+  | 'capacitor-bank'
+  | 'reactor-bank'
+  | 'busbar'
+  | 'line'
+  | 'transformer'
+  | 'transformer-3w'
+  | 'transformer-reg'
+  | 'breaker'
+  | 'switch'
+  | 'disconnect'
+  | 'fuse'
+  | 'sectionalizer'
+  | 'recloser'
+  | 'current-transformer'
+  | 'potential-transformer'
+  | 'relay'
+  | 'meter'
+  | 'ground'
+  | 'external-grid'
+  | 'equivalent'
+  | 'svc'
+  | 'statcom'
+  | 'tcsc'
+  | 'upfc'
+  | 'wind-turbine'
+  | 'pv-array'
+  | 'battery'
+  | 'substation'
+  | 'consortium'
+  | 'arrestor'
+  | 'junction';
+
+export interface IECSymbol {
+  type: IECSymbolType;
+  name: string;
+  ieeeSymbol?: string;
+  category: IECSymbolCategory;
+  subcategory?: string;
+  width: number;
+  height: number;
+  connectionPoints: ConnectionPoint[];
+  properties: ComponentProperty[];
+  render: (ctx: CanvasRenderingContext2D, x: number, y: number, rotation?: number) => void;
+}
+
+export type IECSymbolCategory = 
+  | 'generation'
+  | 'load'
+  | 'transmission'
+  | 'distribution'
+  | 'protection'
+  | 'measurement'
+  | 'compensation'
+  | 'storage'
+  | 'renewable'
+  | 'substation'
+  | 'network';
+
+export interface ConnectionPoint {
+  id: string;
+  x: number;
+  y: number;
+  type: 'top' | 'bottom' | 'left' | 'right' | 'any';
+  busId?: string;
+}
+
+export interface ComponentProperty {
+  key: string;
+  label: string;
+  type: 'number' | 'string' | 'boolean' | 'select' | 'readonly';
+  unit?: string;
+  default?: any;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: { value: string; label: string }[];
+  category?: string;
+  description?: string;
 }
