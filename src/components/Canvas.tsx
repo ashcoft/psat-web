@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Bus, Line, PowerSystem } from '@/types';
+import { renderSymbol } from '@/lib/symbols';
 
 interface CanvasProps {
   system: PowerSystem;
@@ -99,7 +100,7 @@ export default function Canvas({
       }
     });
     
-    // Draw transformers
+    // Draw transformers with IEEE symbol
     system.transformers.forEach(txf => {
       const fromBus = system.buses.find(b => b.id === txf.fromBus);
       const toBus = system.buses.find(b => b.id === txf.toBus);
@@ -114,22 +115,33 @@ export default function Canvas({
       ctx.lineTo(toBus.x * 100, toBus.y * 100);
       ctx.stroke();
       
-      // Draw transformer symbol
+      // Draw IEEE 2-winding transformer symbol at midpoint
       const midX = (fromBus.x + toBus.x) * 50;
       const midY = (fromBus.y + toBus.y) * 50;
-      ctx.fillStyle = '#6b7280';
+      
+      ctx.save();
+      ctx.strokeStyle = selectedLine === txf.id ? '#2563eb' : '#6b7280';
+      ctx.fillStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      
+      // Two concentric circles (IEEE 315 11-6-1 transformer)
       ctx.beginPath();
-      ctx.arc(midX, midY, 8, 0, Math.PI * 2);
+      ctx.arc(midX, midY, 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(midX, midY, 4, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
+      
+      ctx.restore();
     });
     
-    // Draw buses
+    // Draw buses with PSAT/IEEE standard symbols (horizontal bus lines)
     system.buses.forEach(bus => {
       const x = bus.x * 100;
       const y = bus.y * 100;
       const isSelected = bus.id === selectedBus;
       
-      // Bus type colors
       const colors = {
         slack: '#22c55e',
         pv: '#3b82f6',
@@ -137,24 +149,55 @@ export default function Canvas({
       };
       const color = colors[bus.type as keyof typeof colors] || '#999';
       
-      // Draw voltage circle
+      ctx.save();
+      ctx.strokeStyle = isSelected ? '#f59e0b' : color;
+      ctx.lineWidth = isSelected ? 4 : 3;
       ctx.fillStyle = color;
-      ctx.strokeStyle = isSelected ? '#f59e0b' : '#1f2937';
-      ctx.lineWidth = isSelected ? 3 : 2;
       
+      // PSAT bus: thick horizontal line (standard single-line diagram)
+      const busLength = 30;
       ctx.beginPath();
-      ctx.arc(x, y, 15, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(x - busLength / 2, y);
+      ctx.lineTo(x + busLength / 2, y);
       ctx.stroke();
+      
+      // Additional markers per bus type
+      if (bus.type === 'slack') {
+        // Slack/Infinite bus: angled infinite bus marks
+        ctx.strokeStyle = isSelected ? '#f59e0b' : color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - busLength / 2, y);
+        ctx.lineTo(x - busLength / 2 + 8, y - 10);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x - busLength / 2, y);
+        ctx.lineTo(x - busLength / 2 + 8, y + 10);
+        ctx.stroke();
+      } else if (bus.type === 'pv') {
+        // PV bus: circle on bus line (voltage controlled)
+        ctx.strokeStyle = isSelected ? '#f59e0b' : color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        // PQ bus: small solid dot on bus line
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
       
       // Draw voltage value if power flow results
       if (powerFlowResults) {
         const result = powerFlowResults.busResults.find((r: any) => r.id === bus.id);
         if (result) {
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = '#374151';
           ctx.font = 'bold 11px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(result.voltage.toFixed(3), x, y + 4);
+          ctx.fillText(result.voltage.toFixed(3), x, y - 12);
         }
       }
       
@@ -167,7 +210,80 @@ export default function Canvas({
       // Draw bus ID
       ctx.fillStyle = '#6b7280';
       ctx.font = '10px sans-serif';
-      ctx.fillText(`#${bus.id}`, x, y + 32);
+      ctx.textAlign = 'center';
+      ctx.fillText(`#${bus.id}`, x, y + 18);
+    });
+    
+    // Draw generators attached to buses (PSAT standard: circle with G)
+    (system.generators || []).forEach(gen => {
+      const bus = system.buses.find(b => b.id === gen.bus);
+      if (!bus) return;
+      
+      const bx = bus.x * 100;
+      const by = bus.y * 100;
+      const gx = bx - 35;
+      const gy = by - 20;
+      
+      ctx.save();
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 2;
+      ctx.fillStyle = '#ffffff';
+      
+      // PSAT generator: circle with G inside
+      ctx.beginPath();
+      ctx.arc(gx + 12, gy + 12, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      
+      ctx.fillStyle = '#22c55e';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('G', gx + 12, gy + 13);
+      
+      // Generator label below
+      ctx.fillStyle = '#1f2937';
+      ctx.font = '8px sans-serif';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(gen.name || 'Gen', gx + 12, gy + 32);
+      
+      ctx.restore();
+    });
+    
+    // Draw loads attached to buses (PSAT standard: downward arrow/line)
+    (system.loads || []).forEach(load => {
+      const bus = system.buses.find(b => b.id === load.bus);
+      if (!bus) return;
+      
+      const bx = bus.x * 100;
+      const by = bus.y * 100;
+      const lx = bx + 35;
+      const ly = by - 20;
+      
+      ctx.save();
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 2;
+      ctx.fillStyle = '#dc2626';
+      
+      // PSAT load: vertical line with thick horizontal crossbar (arrow/downward style)
+      ctx.beginPath();
+      ctx.moveTo(lx + 12, ly);
+      ctx.lineTo(lx + 12, ly + 24);
+      ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(lx + 4, ly + 12);
+      ctx.lineTo(lx + 20, ly + 12);
+      ctx.stroke();
+      
+      // Load label below
+      ctx.fillStyle = '#1f2937';
+      ctx.lineWidth = 1;
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(load.name || 'Load', lx + 12, ly + 35);
+      
+      ctx.restore();
     });
     
     ctx.restore();

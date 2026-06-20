@@ -2,6 +2,13 @@
 
 import { useState, useCallback } from 'react';
 import { PowerSystem } from '@/types';
+import {
+  SlackBusIcon, PVBusIcon, PQBusIcon,
+  GeneratorIcon, LoadIcon, ShuntIcon,
+  LineIcon, TransformerIcon, FactsIcon,
+  AvrIcon, GovernorIcon, PssIcon, LtciIcon,
+  AreaIcon, BatteryIcon
+} from './SymbolIcons';
 
 interface SidebarProps {
   system: PowerSystem;
@@ -13,7 +20,7 @@ interface SidebarProps {
 interface SectionProps {
   id: string;
   title: string;
-  icon: string;
+  icon: React.ReactNode;
   expandedSection: string | null;
   onToggle: (id: string) => void;
   children: React.ReactNode;
@@ -27,7 +34,7 @@ function Section({ id, title, icon, expandedSection, onToggle, children }: Secti
         className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 text-sm font-medium"
       >
         <span className="flex items-center gap-2">
-          <span>{icon}</span>
+          <span className="flex items-center">{icon}</span>
           <span>{title}</span>
         </span>
         <span className="text-gray-400">{expandedSection === id ? '▼' : '▶'}</span>
@@ -65,14 +72,14 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
         {/* Buses Section */}
-        <Section id="buses" title="Buses" icon="◯" expandedSection={expandedSection} onToggle={handleToggle}>
+        <Section id="buses" title="Buses" icon={<PQBusIcon size={16} />} expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => onAddBus('slack')}
               className="flex flex-col items-center p-2 bg-green-50 rounded hover:bg-green-100"
               title="Add Slack Bus"
             >
-              <span className="text-green-600 text-xl">◯</span>
+              <span className="text-green-600"><SlackBusIcon size={22} /></span>
               <span className="text-xs mt-1">Slack</span>
             </button>
             <button
@@ -80,7 +87,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
               className="flex flex-col items-center p-2 bg-blue-50 rounded hover:bg-blue-100"
               title="Add PV Bus"
             >
-              <span className="text-blue-600 text-xl">◐</span>
+              <span className="text-blue-600"><PVBusIcon size={22} /></span>
               <span className="text-xs mt-1">PV</span>
             </button>
             <button
@@ -88,7 +95,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add PQ Bus"
             >
-              <span className="text-gray-600 text-xl">○</span>
+              <span className="text-gray-600"><PQBusIcon size={22} /></span>
               <span className="text-xs mt-1">PQ</span>
             </button>
           </div>
@@ -98,28 +105,28 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         </Section>
 
         {/* Branches Section */}
-        <Section id="branches" title="Branches" icon="/" expandedSection={expandedSection} onToggle={handleToggle}>
+        <Section id="branches" title="Branches" icon={<LineIcon size={16} />} expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={onAddLine}
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Line"
             >
-              <span className="text-gray-600 text-xl">/</span>
+              <span className="text-gray-600"><LineIcon size={22} /></span>
               <span className="text-xs mt-1">Line</span>
             </button>
             <button
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Transformer"
             >
-              <span className="text-gray-600 text-xl">⊣</span>
+              <span className="text-gray-600"><TransformerIcon size={22} /></span>
               <span className="text-xs mt-1">Txfr</span>
             </button>
             <button
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add FACTS"
             >
-              <span className="text-gray-600 text-xl">⚡</span>
+              <span className="text-gray-600"><FactsIcon size={22} /></span>
               <span className="text-xs mt-1">FACTS</span>
             </button>
           </div>
@@ -129,35 +136,35 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         </Section>
 
         {/* Devices Section */}
-        <Section id="devices" title="Devices" icon="⊛" expandedSection={expandedSection} onToggle={handleToggle}>
+        <Section id="devices" title="Devices" icon={<GeneratorIcon size={16} />} expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-4 gap-2">
             <button
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Generator"
             >
-              <span className="text-xl">G</span>
+              <span className="text-gray-600"><GeneratorIcon size={22} /></span>
               <span className="text-xs">Gen</span>
             </button>
             <button
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Load"
             >
-              <span className="text-xl">L</span>
+              <span className="text-gray-600"><LoadIcon size={22} /></span>
               <span className="text-xs">Load</span>
             </button>
             <button
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Shunt"
             >
-              <span className="text-xl">⊞</span>
+              <span className="text-gray-600"><ShuntIcon size={22} /></span>
               <span className="text-xs">Shnt</span>
             </button>
             <button
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
-              title="Add Reserve"
+              title="Add Battery"
             >
-              <span className="text-xl">R</span>
-              <span className="text-xs">Res</span>
+              <span className="text-gray-600"><BatteryIcon size={22} /></span>
+              <span className="text-xs">Batt</span>
             </button>
           </div>
           <div className="mt-2 text-xs text-gray-500">
@@ -166,29 +173,29 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         </Section>
 
         {/* Controls Section */}
-        <Section id="controls" title="Controls" icon="⚙" expandedSection={expandedSection} onToggle={handleToggle}>
+        <Section id="controls" title="Controls" icon={<AvrIcon size={16} />} expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-4 gap-2">
             <button className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100" title="AVR">
-              <span className="text-xl">A</span>
+              <span className="text-gray-600"><AvrIcon size={22} /></span>
               <span className="text-xs">AVR</span>
             </button>
             <button className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100" title="Governor">
-              <span className="text-xl">G</span>
+              <span className="text-gray-600"><GovernorIcon size={22} /></span>
               <span className="text-xs">Gov</span>
             </button>
             <button className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100" title="PSS">
-              <span className="text-xl">P</span>
+              <span className="text-gray-600"><PssIcon size={22} /></span>
               <span className="text-xs">PSS</span>
             </button>
             <button className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100" title="LTC">
-              <span className="text-xl">T</span>
+              <span className="text-gray-600"><LtciIcon size={22} /></span>
               <span className="text-xs">LTC</span>
             </button>
           </div>
         </Section>
 
         {/* Areas Section */}
-        <Section id="areas" title="Areas & Regions" icon="▣" expandedSection={expandedSection} onToggle={handleToggle}>
+        <Section id="areas" title="Areas & Regions" icon={<AreaIcon size={16} />} expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="space-y-2">
             {(system.areas || []).map(area => (
               <div key={area.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
