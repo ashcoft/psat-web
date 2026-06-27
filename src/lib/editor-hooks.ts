@@ -9,17 +9,19 @@ import {
   Bus, 
   Line, 
   Generator, 
-  Load 
+  Load,
+  Transformer,
+  Shunt
 } from '@/types';
 
 // Selection state
 export interface SelectionState {
-  type: 'bus' | 'line' | 'generator' | 'load' | 'transformer' | null;
+  type: 'bus' | 'line' | 'generator' | 'load' | 'transformer' | 'shunt' | null;
   id: string | null;
 }
 
 // Editor mode
-export type EditorMode = 'select' | 'pan' | 'add-bus' | 'add-line' | 'add-generator' | 'add-load' | 'delete';
+export type EditorMode = 'select' | 'pan' | 'add-bus-slack' | 'add-bus-pv' | 'add-bus-pq' | 'add-line' | 'add-transformer' | 'add-generator' | 'add-load' | 'add-shunt' | 'delete';
 
 // Grid settings
 export interface GridSettings {
@@ -230,6 +232,129 @@ export function useEditor(initialSystem?: PowerSystem) {
     });
   }, [saveToHistory]);
 
+  // Add transformer
+  const addTransformer = useCallback((fromBus: string, toBus: string) => {
+    if (fromBus === toBus) return;
+    
+    saveToHistory('Add transformer');
+    setState(prev => {
+      const id = `txf_${Date.now()}`;
+      const newTxf: Transformer = {
+        id,
+        fromBus,
+        toBus,
+        resistance: 0.01,
+        reactance: 0.05,
+        tap: 1.0,
+        shift: 0,
+        rating: 100,
+        active: true
+      };
+      
+      return {
+        ...prev,
+        system: {
+          ...prev.system,
+          transformers: [...(prev.system.transformers || []), newTxf]
+        },
+        lineStartBus: null,
+        mode: 'select'
+      };
+    });
+  }, [saveToHistory]);
+
+  // Add shunt
+  const addShunt = useCallback((busId: string) => {
+    saveToHistory('Add shunt');
+    setState(prev => {
+      const id = `shunt_${Date.now()}`;
+      const newShunt: Shunt = {
+        id,
+        bus: busId,
+        g: 0,
+        b: 0.1,
+        active: true
+      };
+      
+      return {
+        ...prev,
+        system: {
+          ...prev.system,
+          shunts: [...(prev.system.shunts || []), newShunt]
+        },
+        selection: { type: 'shunt', id },
+        mode: 'select'
+      };
+    });
+  }, [saveToHistory]);
+
+  // Update component functions
+  const updateBus = useCallback((busId: string, updatedBus: Partial<Bus>) => {
+    saveToHistory('Update bus');
+    setState(prev => ({
+      ...prev,
+      system: {
+        ...prev.system,
+        buses: prev.system.buses.map(b => b.id === busId ? { ...b, ...updatedBus } : b)
+      }
+    }));
+  }, [saveToHistory]);
+
+  const updateLine = useCallback((lineId: string, updatedLine: Partial<Line>) => {
+    saveToHistory('Update line');
+    setState(prev => ({
+      ...prev,
+      system: {
+        ...prev.system,
+        lines: prev.system.lines.map(l => l.id === lineId ? { ...l, ...updatedLine } : l)
+      }
+    }));
+  }, [saveToHistory]);
+
+  const updateGenerator = useCallback((genId: string, updatedGen: Partial<Generator>) => {
+    saveToHistory('Update generator');
+    setState(prev => ({
+      ...prev,
+      system: {
+        ...prev.system,
+        generators: prev.system.generators.map(g => g.id === genId ? { ...g, ...updatedGen } : g)
+      }
+    }));
+  }, [saveToHistory]);
+
+  const updateLoad = useCallback((loadId: string, updatedLoad: Partial<Load>) => {
+    saveToHistory('Update load');
+    setState(prev => ({
+      ...prev,
+      system: {
+        ...prev.system,
+        loads: prev.system.loads.map(l => l.id === loadId ? { ...l, ...updatedLoad } : l)
+      }
+    }));
+  }, [saveToHistory]);
+
+  const updateTransformer = useCallback((txfId: string, updatedTxf: Partial<Transformer>) => {
+    saveToHistory('Update transformer');
+    setState(prev => ({
+      ...prev,
+      system: {
+        ...prev.system,
+        transformers: (prev.system.transformers || []).map(t => t.id === txfId ? { ...t, ...updatedTxf } : t)
+      }
+    }));
+  }, [saveToHistory]);
+
+  const updateShunt = useCallback((shuntId: string, updatedShunt: Partial<Shunt>) => {
+    saveToHistory('Update shunt');
+    setState(prev => ({
+      ...prev,
+      system: {
+        ...prev.system,
+        shunts: (prev.system.shunts || []).map(s => s.id === shuntId ? { ...s, ...updatedShunt } : s)
+      }
+    }));
+  }, [saveToHistory]);
+
   // Delete selected element
   const deleteSelected = useCallback(() => {
     const selection = stateRef.current.selection;
@@ -241,19 +366,27 @@ export function useEditor(initialSystem?: PowerSystem) {
       
       switch (selection.type) {
         case 'bus':
-          // Remove bus and all connected lines
+          // Remove bus and all connected components
           newSystem = {
             ...newSystem,
             buses: newSystem.buses.filter(b => b.id !== selection.id),
             lines: newSystem.lines.filter(l => l.fromBus !== selection.id && l.toBus !== selection.id),
+            transformers: (newSystem.transformers || []).filter(t => t.fromBus !== selection.id && t.toBus !== selection.id),
             generators: newSystem.generators.filter(g => g.bus !== selection.id),
-            loads: newSystem.loads.filter(l => l.bus !== selection.id)
+            loads: newSystem.loads.filter(l => l.bus !== selection.id),
+            shunts: (newSystem.shunts || []).filter(s => s.bus !== selection.id)
           };
           break;
         case 'line':
           newSystem = {
             ...newSystem,
             lines: newSystem.lines.filter(l => l.id !== selection.id)
+          };
+          break;
+        case 'transformer':
+          newSystem = {
+            ...newSystem,
+            transformers: (newSystem.transformers || []).filter(t => t.id !== selection.id)
           };
           break;
         case 'generator':
@@ -266,6 +399,12 @@ export function useEditor(initialSystem?: PowerSystem) {
           newSystem = {
             ...newSystem,
             loads: newSystem.loads.filter(l => l.id !== selection.id)
+          };
+          break;
+        case 'shunt':
+          newSystem = {
+            ...newSystem,
+            shunts: (newSystem.shunts || []).filter(s => s.id !== selection.id)
           };
           break;
       }
@@ -381,8 +520,16 @@ export function useEditor(initialSystem?: PowerSystem) {
     redo,
     addBus,
     addLine,
+    addTransformer,
     addGenerator,
     addLoad,
+    addShunt,
+    updateBus,
+    updateLine,
+    updateGenerator,
+    updateLoad,
+    updateTransformer,
+    updateShunt,
     deleteSelected,
     select,
     setMode,

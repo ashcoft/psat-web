@@ -3,26 +3,27 @@
 import { useState } from 'react';
 
 interface SettingsDialogProps {
+  settings: {
+    baseFrequency: number;
+    basePower: number;
+    tolerance: number;
+    maxIterations: number;
+    solutionMethod: 'nr' | 'dc' | 'fast-decoupled';
+    flatStart: boolean;
+    beeps: boolean;
+    theme: 'light' | 'dark' | 'custom';
+    voltageMin: number;
+    voltageMax: number;
+  };
+  onSave: (settings: any) => void;
   onClose: () => void;
 }
 
-export default function SettingsDialog({ onClose }: SettingsDialogProps) {
-  const [settings, setSettings] = useState({
-    baseFrequency: 50,
-    basePower: 100,
-    tolerance: 1e-6,
-    maxIterations: 100,
-    solutionMethod: 'nr',
-    flatStart: true,
-    beeps: false,
-    theme: 'light',
-    voltageMin: 0.9,
-    voltageMax: 1.1,
-  });
+export default function SettingsDialog({ settings: initialSettings, onSave, onClose }: SettingsDialogProps) {
+  const [settings, setSettings] = useState(initialSettings);
 
   const handleSave = () => {
-    // In a real app, this would save settings to localStorage or server
-    console.log('Saving settings:', settings);
+    onSave(settings);
     onClose();
   };
 
@@ -64,7 +65,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
               <SettingsRow label="Theme">
                 <select
                   value={settings.theme}
-                  onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
+                  onChange={(e) => setSettings({ ...settings, theme: e.target.value as 'light' | 'dark' | 'custom' })}
                   className="w-24 px-2 py-1 border border-gray-300 rounded text-sm"
                 >
                   <option value="light">Light</option>
@@ -79,7 +80,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
               <SettingsRow label="Solution Method">
                 <select
                   value={settings.solutionMethod}
-                  onChange={(e) => setSettings({ ...settings, solutionMethod: e.target.value })}
+                  onChange={(e) => setSettings({ ...settings, solutionMethod: e.target.value as 'nr' | 'dc' | 'fast-decoupled' })}
                   className="w-32 px-2 py-1 border border-gray-300 rounded text-sm"
                 >
                   <option value="nr">Newton-Raphson</option>

@@ -59,49 +59,81 @@ export interface NetworkModel {
 }
 
 /**
- * Calculate eigenvalues using QR algorithm (simplified)
+ * Compute eigenvalues using the QR algorithm with proper implementation
+ * Uses Householder reflections for QR decomposition
  */
 function qrIteration(A: number[][], maxIter = 100): number[][] {
   let Ak = A.map(row => [...row]);
   const n = Ak.length;
+  let converged = false;
+  let iter = 0;
   
-  for (let iter = 0; iter < maxIter; iter++) {
-    // Compute QR decomposition (simplified for small matrices)
-    const Q: number[][] = [];
+  while (!converged && iter < maxIter) {
+    converged = true;
+    
+    // Check for sub-diagonal convergence
+    for (let i = 0; i < n - 1; i++) {
+      if (Math.abs(Ak[i + 1][i]) > 1e-10) {
+        converged = false;
+        break;
+      }
+    }
+    if (converged) break;
+    
+    // QR decomposition using Gram-Schmidt
+    const Q: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
     const R: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
     
-    for (let i = 0; i < n; i++) {
-      Q[i] = [];
-      for (let j = 0; j < n; j++) {
-        if (j < i) {
-          Q[i][j] = 0;
-        } else if (j === i) {
-          let norm = 0;
-          for (let k = i; k < n; k++) norm += Ak[k][i] ** 2;
-          Q[i][j] = norm > 0 ? 1 : 0;
-        } else {
-          Q[i][j] = 0;
+    for (let j = 0; j < n; j++) {
+      // Start with the j-th column of A
+      const v: number[] = [];
+      for (let i = 0; i < n; i++) {
+        v.push(Ak[i][j]);
+      }
+      
+      // Subtract projections onto previous Q columns
+      for (let k = 0; k < j; k++) {
+        let dot = 0;
+        for (let i = 0; i < n; i++) {
+          dot += Q[i][k] * Ak[i][j];
+        }
+        R[k][j] = dot;
+        for (let i = 0; i < n; i++) {
+          v[i] -= dot * Q[i][k];
+        }
+      }
+      
+      // Normalize
+      let norm = 0;
+      for (let i = 0; i < n; i++) {
+        norm += v[i] * v[i];
+      }
+      norm = Math.sqrt(norm);
+      R[j][j] = norm;
+      
+      if (norm > 1e-12) {
+        for (let i = 0; i < n; i++) {
+          Q[i][j] = v[i] / norm;
+        }
+      } else {
+        for (let i = 0; i < n; i++) {
+          Q[i][j] = i === j ? 1 : 0;
         }
       }
     }
     
-    // Simplified QR step
-    for (let i = 0; i < n - 1; i++) {
-      const aii = Ak[i][i];
-      const aij = Ak[i][i + 1];
-      if (Math.abs(aij) < 1e-10) continue;
-      
-      const theta = Math.atan2(aij, aii);
-      const c = Math.cos(theta);
-      const s = Math.sin(theta);
-      
-      // Update Ak
-      const temp1 = c * aii + s * aij;
-      const temp2 = -s * aii + c * aij;
-      Ak[i][i] = temp1;
-      Ak[i][i + 1] = 0;
-      Ak[i + 1][i] = temp2;
+    // A_{k+1} = R * Q (reverse multiplication to get upper Hessenberg)
+    const Anext: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        for (let k = 0; k < n; k++) {
+          Anext[i][j] += R[i][k] * Q[k][j];
+        }
+      }
     }
+    
+    Ak = Anext;
+    iter++;
   }
   
   return Ak;

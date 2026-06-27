@@ -14,6 +14,10 @@ interface SidebarProps {
   system: PowerSystem;
   onAddBus: (type: 'slack' | 'pv' | 'pq') => void;
   onAddLine: () => void;
+  onAddTransformer: () => void;
+  onAddGenerator: () => void;
+  onAddLoad: () => void;
+  onAddShunt: () => void;
   onCollapse: () => void;
 }
 
@@ -48,7 +52,16 @@ function Section({ id, title, icon, expandedSection, onToggle, children }: Secti
   );
 }
 
-export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: SidebarProps) {
+export default function Sidebar({
+  system,
+  onAddBus,
+  onAddLine,
+  onAddTransformer,
+  onAddGenerator,
+  onAddLoad,
+  onAddShunt,
+  onCollapse
+}: SidebarProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>('buses');
   
   const handleToggle = useCallback((id: string) => {
@@ -116,6 +129,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
               <span className="text-xs mt-1">Line</span>
             </button>
             <button
+              onClick={onAddTransformer}
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Transformer"
             >
@@ -139,6 +153,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
         <Section id="devices" title="Devices" icon={<GeneratorIcon size={16} />} expandedSection={expandedSection} onToggle={handleToggle}>
           <div className="grid grid-cols-4 gap-2">
             <button
+              onClick={onAddGenerator}
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Generator"
             >
@@ -146,6 +161,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
               <span className="text-xs">Gen</span>
             </button>
             <button
+              onClick={onAddLoad}
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Load"
             >
@@ -153,6 +169,7 @@ export default function Sidebar({ system, onAddBus, onAddLine, onCollapse }: Sid
               <span className="text-xs">Load</span>
             </button>
             <button
+              onClick={onAddShunt}
               className="flex flex-col items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
               title="Add Shunt"
             >

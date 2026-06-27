@@ -19,6 +19,7 @@
   "author": "PSAT Team",
   "license": "GPL-3.0",
   "dependencies": {
+    "@heyputer/puter.js": "^2.5.4",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

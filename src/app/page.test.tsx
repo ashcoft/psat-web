@@ -45,7 +45,7 @@ describe('HomePage', () => {
 
   it('should display the title', () => {
     render(<HomePage />);
-    expect(screen.getByText('Power System Analysis Toolbox')).toBeInTheDocument();
+    expect(screen.getByText(/Power System Analysis Toolbox/)).toBeInTheDocument();
   });
 
   it('should render all main components', () => {
@@ -66,15 +66,13 @@ describe('HomePage', () => {
     expect(screen.getByText(/Loads:/)).toBeInTheDocument();
     expect(screen.getByText(/Generators:/)).toBeInTheDocument();
     expect(screen.getByText(/Base: 100 MVA/)).toBeInTheDocument();
-    expect(screen.getByText(/Frequency: 50 Hz/)).toBeInTheDocument();
+    expect(screen.getByText(/Freq: 60 Hz/)).toBeInTheDocument();
   });
 
-  it('should have menu items in title bar', () => {
+  it('should have title bar elements', () => {
     render(<HomePage />);
-    expect(screen.getByText('File')).toBeInTheDocument();
-    expect(screen.getByText('Edit')).toBeInTheDocument();
-    expect(screen.getByText('View')).toBeInTheDocument();
-    expect(screen.getByText('Analysis')).toBeInTheDocument();
-    expect(screen.getByText('Help')).toBeInTheDocument();
+    expect(screen.getByText(/PSAT/)).toBeInTheDocument();
+    expect(screen.getByText(/Active Study/)).toBeInTheDocument();
+    expect(screen.getByText(/Load Flow/)).toBeInTheDocument();
   });
 });

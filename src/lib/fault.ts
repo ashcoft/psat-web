@@ -66,21 +66,94 @@ export interface FaultStudyResult {
 
 /**
  * Calculate impedance matrix for fault analysis
+ * Z_bus = Y_bus^(-1) using proper matrix inversion
+ * The Z-bus diagonal at node k gives the Thevenin impedance for fault at k
  */
 function buildZMatrix(ybus: ReturnType<typeof buildYBus>): number[][] {
   const n = ybus.n;
+  
+  // Build full complex Ybus: Y = G + jB
   const Z: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
+  
+  // Invert Ybus using LU decomposition on the complex matrix
+  // First, convert to real representation: [G  -B; B  G]
+  const m = 2 * n;
+  const A: number[][] = Array(m).fill(null).map(() => Array(m).fill(0));
   
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      const gij = ybus.g[i][j];
-      const bij = ybus.b[i][j];
-      const yijMag = Math.sqrt(gij * gij + bij * bij);
-      Z[i][j] = yijMag !== 0 ? 1 / yijMag : 1e10;
+      // Real part: G
+      A[i][j] = ybus.g[i][j];
+      A[n + i][n + j] = ybus.g[i][j];
+      // Imaginary part: -B for cross terms
+      A[i][n + j] = -ybus.b[i][j];
+      A[n + i][j] = ybus.b[i][j];
     }
   }
   
+  // Solve A * X = I for each column to get Zbus
+  for (let col = 0; col < n; col++) {
+    // RHS: e_{col} + j*0
+    const rhs: number[] = new Array(m).fill(0);
+    rhs[col] = 1;
+    
+    // Solve linear system
+    const x = solveLinearSystem(A, rhs);
+    
+    // Extract complex result: Z = x[0..n-1] + j*x[n..2n-1]
+    for (let i = 0; i < n; i++) {
+      // Z_ij = magnitude of impedance between bus i and j
+      const zRe = x[i];
+      const zIm = x[n + i];
+      Z[i][col] = Math.sqrt(zRe * zRe + zIm * zIm);
+    }
+  }
+  
+  // Ensure no zero diagonal elements (shouldn't happen with proper Ybus)
+  for (let i = 0; i < n; i++) {
+    if (Z[i][i] < 1e-10) Z[i][i] = 0.1;
+  }
+  
   return Z;
+}
+
+/**
+ * Solve linear system Ax = b using Gaussian elimination with partial pivoting
+ */
+function solveLinearSystem(A: number[][], b: number[]): number[] {
+  const n = b.length;
+  const aug: number[][] = A.map((row, i) => [...row, b[i]]);
+  
+  for (let col = 0; col < n; col++) {
+    let maxRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) {
+        maxRow = row;
+      }
+    }
+    [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+    
+    if (Math.abs(aug[col][col]) < 1e-12) {
+      aug[col][col] = 1e-12;
+    }
+    
+    for (let row = col + 1; row < n; row++) {
+      const factor = aug[row][col] / aug[col][col];
+      for (let j = col; j <= n; j++) {
+        aug[row][j] -= factor * aug[col][j];
+      }
+    }
+  }
+  
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    x[i] = aug[i][n];
+    for (let j = i + 1; j < n; j++) {
+      x[i] -= aug[i][j] * x[j];
+    }
+    x[i] /= aug[i][i];
+  }
+  return x;
 }
 
 /**
