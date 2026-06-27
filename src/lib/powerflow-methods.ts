@@ -33,16 +33,19 @@ interface YBusMatrix {
 
 /**
  * Build YBus matrix from system data
+ * Per §3 contract:
+ *   Y_ij (off-diagonal, i≠j) = −y_series_ij  ← NEGATIVE of series admittance
+ *   Y_ii (diagonal)          = Σ y_series_ik  +  jB_c/2  +  y_shunt_i
  */
 export function buildYBus(system: PowerSystem): YBusMatrix {
   const n = system.buses.length;
-  const g: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
-  const b: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
+  const g: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
+  const b: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
   
   const busIndex = new Map<string, number>();
   system.buses.forEach((bus, idx) => busIndex.set(bus.id, idx));
 
-  // Add line contributions
+  // Add line contributions (π-model)
   system.lines.forEach(line => {
     if (!line.active) return;
     const i = busIndex.get(line.fromBus);
@@ -52,24 +55,28 @@ export function buildYBus(system: PowerSystem): YBusMatrix {
     const r = line.resistance;
     const x = line.reactance;
     const z2 = r * r + x * x;
-    const yij_real = r / z2;
-    const yij_imag = -x / z2;
-    const b_shunt = line.susceptance / 2;
+    const yij_real = r / z2;       // gij = R/(R²+X²)
+    const yij_imag = -x / z2;     // bij = -X/(R²+X²) (negative for inductive)
+    const b_shunt = line.susceptance * 0.5;  // half-line charging B_c/2
 
-    // Off-diagonal
-    g[i][j] += yij_real;
-    b[i][j] += yij_imag;
-    g[j][i] += yij_real;
-    b[j][i] += yij_imag;
+    // Off-diagonal: Y_ij = −yij (NEGATIVE series admittance)
+    g[i][j] -= yij_real;
+    b[i][j] -= yij_imag;
+    g[j][i] -= yij_real;
+    b[j][i] -= yij_imag;
 
-    // Diagonal (self admittance)
-    g[i][i] += yij_real + b_shunt * 0; // half-line charging goes to b
+    // Diagonal: Y_ii += yij + j·B_c/2
+    g[i][i] += yij_real;
     b[i][i] += yij_imag + b_shunt;
-    g[j][j] += yij_real + b_shunt * 0;
+    g[j][j] += yij_real;
     b[j][j] += yij_imag + b_shunt;
   });
 
   // Add transformer contributions
+  // For transformer with off-nominal tap a = V_from / V_to:
+  //   Y_ii (tap side)   += yt / a²
+  //   Y_jj (load side)  += yt
+  //   Y_ij = Y_ji       -= yt / a
   (system.transformers || []).forEach(txf => {
     if (!txf.active) return;
     const i = busIndex.get(txf.fromBus);
@@ -79,24 +86,25 @@ export function buildYBus(system: PowerSystem): YBusMatrix {
     const r = txf.resistance;
     const x = txf.reactance;
     const z2 = r * r + x * x;
-    const y_real = r / z2;
-    const y_imag = -x / z2;
+    const yt_real = r / z2;
+    const yt_imag = -x / z2;
     const a = txf.tap > 0 ? txf.tap : 1.0;
     const a2 = a * a;
 
-    // With tap ratio
-    g[i][j] += y_real / a;
-    b[i][j] += y_imag / a;
-    g[j][i] += y_real / a;
-    b[j][i] += y_imag / a;
+    // Off-diagonal: Y_ij = Y_ji = −yt/a
+    g[i][j] -= yt_real / a;
+    b[i][j] -= yt_imag / a;
+    g[j][i] -= yt_real / a;
+    b[j][i] -= yt_imag / a;
 
-    g[i][i] += y_real / a2;
-    b[i][i] += y_imag / a2;
-    g[j][j] += y_real;
-    b[j][j] += y_imag;
+    // Diagonal
+    g[i][i] += yt_real / a2;
+    b[i][i] += yt_imag / a2;
+    g[j][j] += yt_real;
+    b[j][j] += yt_imag;
   });
 
-  // Add shunt contributions
+  // Add shunt contributions (go ONLY on the diagonal)
   (system.shunts || []).forEach(shunt => {
     if (!shunt.active) return;
     const i = busIndex.get(shunt.bus);
@@ -111,11 +119,11 @@ export function buildYBus(system: PowerSystem): YBusMatrix {
 /**
  * DC Power Flow Method
  * Fast linear solution, ignores reactive power
+ * Per §4C: Build B' DIRECTLY from branch reactances, not from YBus.b
  */
 export function solveDC(system: PowerSystem): PowerFlowResult {
   const startTime = performance.now();
   const n = system.buses.length;
-  const ybus = buildYBus(system);
   
   const busIndex = new Map<string, number>();
   system.buses.forEach((bus, idx) => busIndex.set(bus.id, idx));
@@ -130,7 +138,7 @@ export function solveDC(system: PowerSystem): PowerFlowResult {
   }
   if (slackIdx === -1) slackIdx = 0;
 
-  // Build P injection vector (net power at each bus)
+  // Build P injection vector (net power at each bus in MW)
   const P = new Array(n).fill(0);
   
   // Add generator P
@@ -145,22 +153,49 @@ export function solveDC(system: PowerSystem): PowerFlowResult {
     if (idx !== undefined) P[idx] -= load.pl;
   });
 
-  // Build B' matrix (susceptance only, DC approximation)
-  const B: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
-  for (let i = 0; i < n; i++) {
-    B[i][i] = ybus.b[i].reduce((sum, val) => sum + val, 0);
-  }
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      if (i !== j && ybus.b[i][j] !== 0) {
-        B[i][j] = ybus.b[i][j];
-      }
-    }
-  }
+  // Build B' matrix DIRECTLY from branch reactances (NOT from YBus.b)
+  // Per §4C contract: b_ij_prime = -1 / X_ij
+  const B: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
+  
+  // Add lines
+  system.lines.forEach(line => {
+    if (!line.active) return;
+    const i = busIndex.get(line.fromBus);
+    const j = busIndex.get(line.toBus);
+    if (i === undefined || j === undefined) return;
+    
+    const x = line.reactance;
+    if (Math.abs(x) < 1e-10) return; // Skip zero reactance
+    
+    const b_ij = -1 / x;  // b_ij_prime = -1/X
+    
+    B[i][i] += b_ij;
+    B[j][j] += b_ij;
+    B[i][j] -= b_ij;
+    B[j][i] -= b_ij;
+  });
+  
+  // Add transformers
+  (system.transformers || []).forEach(txf => {
+    if (!txf.active) return;
+    const i = busIndex.get(txf.fromBus);
+    const j = busIndex.get(txf.toBus);
+    if (i === undefined || j === undefined) return;
+    
+    const x = txf.reactance;
+    if (Math.abs(x) < 1e-10) return;
+    
+    const b_ij = -1 / x;
+    
+    B[i][i] += b_ij;
+    B[j][j] += b_ij;
+    B[i][j] -= b_ij;
+    B[j][i] -= b_ij;
+  });
 
   // Remove slack bus row and column
   const m = n - 1;
-  const Bred: number[][] = Array(m).fill(null).map(() => Array(m).fill(0));
+  const Bred: number[][] = new Array(m).fill(null).map(() => new Array(m).fill(0));
   const Pred: number[] = [];
   const idxMap: number[] = [];
   
@@ -178,12 +213,12 @@ export function solveDC(system: PowerSystem): PowerFlowResult {
     col++;
   }
 
-  // Solve linear system Bred * theta = P
+  // Solve linear system Bred * theta = P (in radians)
   const theta = solveLinearSystem(Bred, Pred);
 
   // Reconstruct full angle vector
   const angles = new Array(n).fill(0);
-  angles[slackIdx] = system.buses[slackIdx].angle || 0;
+  angles[slackIdx] = (system.buses[slackIdx].angle || 0) * Math.PI / 180;
   for (let i = 0; i < m; i++) {
     angles[idxMap[i]] = theta[i];
   }
@@ -195,7 +230,7 @@ export function solveDC(system: PowerSystem): PowerFlowResult {
     
     const dij = angles[i] - angles[j];
     const x = line.reactance;
-    const Pij = dij / x * 100; // Base MVA
+    const Pij = dij / x * (system.baseMVA || 100);
     const Pji = -Pij;
     
     return {
@@ -252,6 +287,7 @@ export function solveDC(system: PowerSystem): PowerFlowResult {
 /**
  * Fast Decoupled Power Flow
  * Uses B' and B'' matrices for P-θ and Q-V coupling
+ * Per §4B: B' is built DIRECTLY from branch reactances
  */
 export function solveFastDecoupled(system: PowerSystem, tolerance = 1e-6, maxIterations = 50): PowerFlowResult {
   const startTime = performance.now();
@@ -273,38 +309,105 @@ export function solveFastDecoupled(system: PowerSystem, tolerance = 1e-6, maxIte
   });
   if (slackIdx === -1) slackIdx = 0;
 
-  // Build B' and B'' matrices
-  const Bp: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
-  const Bpp: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
+  // Build B' matrix DIRECTLY from branch reactances (per §4B contract)
+  // b_ij_prime = -1 / X_ij
+  const Bp: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
+  
+  system.lines.forEach(line => {
+    if (!line.active) return;
+    const i = busIndex.get(line.fromBus);
+    const j = busIndex.get(line.toBus);
+    if (i === undefined || j === undefined) return;
+    const x = line.reactance;
+    if (Math.abs(x) < 1e-10) return;
+    const b_ij = -1 / x;
+    Bp[i][i] += b_ij;
+    Bp[j][j] += b_ij;
+    Bp[i][j] -= b_ij;
+    Bp[j][i] -= b_ij;
+  });
+  
+  (system.transformers || []).forEach(txf => {
+    if (!txf.active) return;
+    const i = busIndex.get(txf.fromBus);
+    const j = busIndex.get(txf.toBus);
+    if (i === undefined || j === undefined) return;
+    const x = txf.reactance;
+    if (Math.abs(x) < 1e-10) return;
+    const b_ij = -1 / x;
+    Bp[i][i] += b_ij;
+    Bp[j][j] += b_ij;
+    Bp[i][j] -= b_ij;
+    Bp[j][i] -= b_ij;
+  });
 
+  // Build B'' matrix from YBus (for Q-V coupling)
+  // B''[i][j] = -YBus.b[i][j] for i≠j
+  // B''[i][i] = -YBus.b[i][i] + line_charging
+  const Bpp: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
   for (let i = 0; i < n; i++) {
-    Bpp[i][i] = ybus.b[i].reduce((sum, val) => sum + val, 0);
     for (let j = 0; j < n; j++) {
-      if (i !== j) {
-        Bp[i][j] = -ybus.b[i][j];
-        Bpp[i][j] = ybus.b[i][j];
-      }
+      Bpp[i][j] = -ybus.b[i][j];
+    }
+  }
+  // Add line charging to diagonal
+  system.lines.forEach(line => {
+    if (!line.active) return;
+    const i = busIndex.get(line.fromBus);
+    const j = busIndex.get(line.toBus);
+    if (i !== undefined) Bpp[i][i] += line.susceptance * 0.5;
+    if (j !== undefined) Bpp[j][j] += line.susceptance * 0.5;
+  });
+
+  // Non-slack bus indices
+  const nonSlackBuses: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (i !== slackIdx) nonSlackBuses.push(i);
+  }
+  const m = nonSlackBuses.length;
+  
+  // Reduced B' matrix
+  const Bpred: number[][] = new Array(m).fill(null).map(() => new Array(m).fill(0));
+  for (let p = 0; p < m; p++) {
+    for (let q = 0; q < m; q++) {
+      Bpred[p][q] = Bp[nonSlackBuses[p]][nonSlackBuses[q]];
     }
   }
 
-  // Remove slack bus from B' (P-θ equations)
-  const m = n - 1;
-  const Bpred: number[][] = Array(m).fill(null).map(() => Array(m).fill(0));
-  const idxMapP: number[] = [];
-  let col = 0;
+  // PQ bus indices for B''
+  const pqBuses: number[] = [];
   for (let i = 0; i < n; i++) {
-    if (i === slackIdx) continue;
-    idxMapP.push(i);
-    let row = 0;
-    for (let j = 0; j < n; j++) {
-      if (j === slackIdx) continue;
-      Bpred[row][col] = Bp[i][j];
-      row++;
+    if (i !== slackIdx && system.buses[i].type === 'pq') {
+      pqBuses.push(i);
     }
-    col++;
+  }
+  const nPQ = pqBuses.length;
+  
+  // Reduced B'' matrix
+  const Bppred: number[][] = new Array(nPQ).fill(null).map(() => new Array(nPQ).fill(0));
+  for (let p = 0; p < nPQ; p++) {
+    for (let q = 0; q < nPQ; q++) {
+      Bppred[p][q] = Bpp[pqBuses[p]][pqBuses[q]];
+    }
   }
 
-  // Build P and Q mismatches
+  // Target P and Q
+  const P: number[] = new Array(n).fill(0);
+  const Q: number[] = new Array(n).fill(0);
+  
+  system.generators.forEach(gen => {
+    const idx = busIndex.get(gen.bus);
+    if (idx !== undefined) P[idx] += gen.pg;
+  });
+  system.loads.forEach(load => {
+    const idx = busIndex.get(load.bus);
+    if (idx !== undefined) {
+      P[idx] -= load.pl;
+      Q[idx] -= load.ql;
+    }
+  });
+
+  // Iterations
   let converged = false;
   let iterations = 0;
   let maxMismatch = Infinity;
@@ -326,52 +429,55 @@ export function solveFastDecoupled(system: PowerSystem, tolerance = 1e-6, maxIte
       }
     }
 
-    // Target P and Q
-    const P = new Array(n).fill(0);
-    const Q = new Array(n).fill(0);
-    
-    system.generators.forEach(gen => {
-      const idx = busIndex.get(gen.bus);
-      if (idx !== undefined) P[idx] += gen.pg;
-    });
-    system.loads.forEach(load => {
-      const idx = busIndex.get(load.bus);
-      if (idx !== undefined) P[idx] -= load.pl;
-    });
-    system.shunts?.forEach(shunt => {
-      const idx = busIndex.get(shunt.bus);
-      if (idx !== undefined) Q[idx] -= shunt.b * V[idx] * V[idx];
-    });
+    // P mismatch for non-slack buses
+    const dP: number[] = [];
+    for (const i of nonSlackBuses) {
+      dP.push((P[i] - Pcalc[i]) / V[i]);
+    }
 
-    // Calculate mismatches
-    const dP = new Array(m).fill(0);
-    const dQ = new Array(m).fill(0);
+    // Update angles (P-θ)
+    const dTheta = solveLinearSystem(Bpred, dP);
+    for (let k = 0; k < nonSlackBuses.length; k++) {
+      theta[nonSlackBuses[k]] += dTheta[k];
+    }
+
+    // Recalculate after angle update
+    for (let i = 0; i < n; i++) {
+      Pcalc[i] = 0;
+      Qcalc[i] = 0;
+      for (let j = 0; j < n; j++) {
+        const Vij = V[i] * V[j];
+        const theta_ij = theta[i] - theta[j];
+        Pcalc[i] += Vij * (ybus.g[i][j] * Math.cos(theta_ij) + ybus.b[i][j] * Math.sin(theta_ij));
+        Qcalc[i] += Vij * (ybus.g[i][j] * Math.sin(theta_ij) - ybus.b[i][j] * Math.cos(theta_ij));
+      }
+    }
+
+    // Q mismatch for PQ buses
+    const dQ: number[] = [];
+    for (const i of pqBuses) {
+      dQ.push((Q[i] - Qcalc[i]) / V[i]);
+    }
+
+    // Update voltages (Q-V)
+    const dV = solveLinearSystem(Bppred, dQ);
+    for (let k = 0; k < pqBuses.length; k++) {
+      V[pqBuses[k]] += dV[k];
+      V[pqBuses[k]] = Math.max(0.5, Math.min(1.5, V[pqBuses[k]]));
+    }
+
+    // Check convergence
     maxMismatch = 0;
-
-    for (let i = 0; i < m; i++) {
-      const busIdx = idxMapP[i];
-      dP[i] = P[busIdx] - Pcalc[busIdx];
-      dQ[i] = Q[busIdx] - Qcalc[busIdx];
-      maxMismatch = Math.max(maxMismatch, Math.abs(dP[i]), Math.abs(dQ[i]));
+    for (const i of nonSlackBuses) {
+      maxMismatch = Math.max(maxMismatch, Math.abs(P[i] - Pcalc[i]));
+    }
+    for (const i of pqBuses) {
+      maxMismatch = Math.max(maxMismatch, Math.abs(Q[i] - Qcalc[i]));
     }
 
     if (maxMismatch < tolerance) {
       converged = true;
       break;
-    }
-
-    // Update angles (P-θ)
-    const dTheta = solveLinearSystem(Bpred, dP);
-    for (let i = 0; i < m; i++) {
-      theta[idxMapP[i]] += dTheta[i];
-    }
-
-    // Update voltages (Q-V)
-    const dV = new Array(m).fill(0);
-    for (let i = 0; i < m; i++) {
-      const busIdx = idxMapP[i];
-      dV[i] = dQ[i] / (V[busIdx] * Bpp[busIdx][busIdx]);
-      V[busIdx] += dV[i];
     }
 
     iterations++;
@@ -384,30 +490,30 @@ export function solveFastDecoupled(system: PowerSystem, tolerance = 1e-6, maxIte
     
     const dij = theta[i] - theta[j];
     const z2 = line.resistance * line.resistance + line.reactance * line.reactance;
-    const yij = 1 / Math.sqrt(z2);
     const y_real = line.resistance / z2;
     const y_imag = -line.reactance / z2;
     
-    const V_i = V[i];
-    const V_j = V[j];
-    const Iij = yij * Math.sqrt(
-      V_i * V_i + V_j * V_j - 2 * V_i * V_j * Math.cos(dij)
-    );
+    const Vi = V[i];
+    const Vj = V[j];
+    const Pij = Vi * Vj * (y_real * Math.cos(dij) + y_imag * Math.sin(dij));
+    const Qij = Vi * Vj * (y_real * Math.sin(dij) - y_imag * Math.cos(dij));
+    const Pji = Vi * Vj * (y_real * Math.cos(-dij) + y_imag * Math.sin(-dij));
+    const Qji = Vi * Vj * (y_real * Math.sin(-dij) - y_imag * Math.cos(-dij));
     
-    const Pij = V_i * Iij * Math.cos(dij + Math.atan2(y_imag, y_real));
-    const Qij = V_i * Iij * Math.sin(dij + Math.atan2(y_imag, y_real));
+    const baseMVA = system.baseMVA || 100;
+    const loading = Math.sqrt(Pij * Pij + Qij * Qij) / line.rating * 100;
     
     return {
       line: line.id,
       fromBus: line.fromBus,
       toBus: line.toBus,
-      pFrom: Pij * 100,
-      qFrom: Qij * 100,
-      pTo: -Pij * 100,
-      qTo: -Qij * 100,
-      ploss: 0,
-      qloss: 0,
-      loading: Math.abs(Iij) / line.rating * 100
+      pFrom: Pij * baseMVA,
+      qFrom: Qij * baseMVA,
+      pTo: Pji * baseMVA,
+      qTo: Qji * baseMVA,
+      ploss: (Pij + Pji) * baseMVA,
+      qloss: (Qij + Qji) * baseMVA,
+      loading
     };
   });
 
@@ -667,10 +773,11 @@ function complexDiv(a: Complex, b: Complex): Complex {
 /**
  * Newton-Raphson Power Flow Method
  * Full AC power flow solution using Jacobian matrix
+ * Per §4A contract
  */
 export function solveNewtonRaphson(
   system: PowerSystem, 
-  tolerance = 1e-6, 
+  tolerance = 1e-8, 
   maxIterations = 100
 ): PowerFlowResult {
   const startTime = performance.now();
@@ -681,13 +788,15 @@ export function solveNewtonRaphson(
   system.buses.forEach((bus, idx) => busIndex.set(bus.id, idx));
 
   // Initialize voltages
-  const V: Complex[] = new Array(n);
+  const V: number[] = new Array(n);
+  const theta: number[] = new Array(n);
   let slackIdx = -1;
   let pvBuses: number[] = [];
   let pqBuses: number[] = [];
 
   system.buses.forEach((bus, idx) => {
-    V[idx] = complex(bus.voltage || 1.0, 0);
+    V[idx] = bus.voltage || 1.0;
+    theta[idx] = (bus.angle || 0) * Math.PI / 180;
     if (bus.type === 'slack') {
       slackIdx = idx;
     } else if (bus.type === 'pv') {
@@ -714,49 +823,48 @@ export function solveNewtonRaphson(
     }
   });
 
+  // Non-slack buses for state vector
+  const nonSlackBuses: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (i !== slackIdx) nonSlackBuses.push(i);
+  }
+  const np = nonSlackBuses.length;
+
   let converged = false;
   let iterations = 0;
   let maxMismatch = Infinity;
 
   while (!converged && iterations < maxIterations) {
-    // Calculate power injections
-    const Pcalc = new Array(n).fill(0);
-    const Qcalc = new Array(n).fill(0);
+    // Calculate power injections: P_i = V_i * Σ_j V_j * (G_ij * cos θ_ij + B_ij * sin θ_ij)
+    const Pcalc: number[] = new Array(n).fill(0);
+    const Qcalc: number[] = new Array(n).fill(0);
 
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
         const Vi = V[i];
         const Vj = V[j];
-        const theta_ij = Vi.imag - Vj.imag;
-        const gij = ybus.g[i][j];
-        const bij = ybus.b[i][j];
+        const theta_ij = theta[i] - theta[j];
+        const cos_ij = Math.cos(theta_ij);
+        const sin_ij = Math.sin(theta_ij);
         
-        Pcalc[i] += Vi.real * Vj.real * (gij * Math.cos(theta_ij) + bij * Math.sin(theta_ij));
-        Pcalc[i] += Vi.imag * Vj.real * (gij * Math.sin(theta_ij) - bij * Math.cos(theta_ij));
-        Pcalc[i] += Vi.real * Vj.imag * (gij * Math.sin(theta_ij) - bij * Math.cos(theta_ij));
-        Pcalc[i] += Vi.imag * Vj.imag * (gij * Math.cos(theta_ij) + bij * Math.sin(theta_ij));
-        
-        Qcalc[i] += Vi.real * Vj.real * (gij * Math.sin(theta_ij) - bij * Math.cos(theta_ij));
-        Qcalc[i] += Vi.imag * Vj.real * (-gij * Math.cos(theta_ij) - bij * Math.sin(theta_ij));
-        Qcalc[i] += Vi.real * Vj.imag * (-gij * Math.cos(theta_ij) - bij * Math.sin(theta_ij));
-        Qcalc[i] += Vi.imag * Vj.imag * (gij * Math.sin(theta_ij) - bij * Math.cos(theta_ij));
+        Pcalc[i] += Vi * Vj * (ybus.g[i][j] * cos_ij + ybus.b[i][j] * sin_ij);
+        Qcalc[i] += Vi * Vj * (ybus.g[i][j] * sin_ij - ybus.b[i][j] * cos_ij);
       }
     }
 
-    // Calculate mismatches
-    const dP = new Array(n).fill(0);
-    const dQ = new Array(n).fill(0);
-    maxMismatch = 0;
+    // Build mismatch vector
+    const mismatches: number[] = [];
+    for (const i of nonSlackBuses) {
+      mismatches.push(P[i] - Pcalc[i]);
+    }
+    for (const i of pqBuses) {
+      mismatches.push(Q[i] - Qcalc[i]);
+    }
 
-    for (let i = 0; i < n; i++) {
-      if (i !== slackIdx) {
-        dP[i] = P[i] - Pcalc[i];
-        maxMismatch = Math.max(maxMismatch, Math.abs(dP[i]));
-      }
-      if (pqBuses.includes(i)) {
-        dQ[i] = Q[i] - Qcalc[i];
-        maxMismatch = Math.max(maxMismatch, Math.abs(dQ[i]));
-      }
+    // Calculate max mismatch
+    maxMismatch = 0;
+    for (const m of mismatches) {
+      maxMismatch = Math.max(maxMismatch, Math.abs(m));
     }
 
     if (maxMismatch < tolerance) {
@@ -764,55 +872,120 @@ export function solveNewtonRaphson(
       break;
     }
 
-    // Simplified Jacobian update (use B' and B'')
-    for (let i = 0; i < n; i++) {
-      if (i !== slackIdx) {
-        // Angle update from P mismatch
-        const sumB = ybus.b[i].reduce((s, b) => s + b, 0);
-        V[i].imag -= dP[i] / sumB;
+    // Build Jacobian
+    const nn = mismatches.length; // np + nPQ
+    const J: number[][] = new Array(nn).fill(null).map(() => new Array(nn).fill(0));
+
+    // J1: dP/dθ for non-slack buses
+    for (let p = 0; p < np; p++) {
+      const i = nonSlackBuses[p];
+      for (let q = 0; q < np; q++) {
+        const j = nonSlackBuses[q];
+        if (i === j) {
+          // Diagonal: J1[p,p] = -Q_i - B_ii * V_i²
+          let sum = 0;
+          for (let k = 0; k < n; k++) {
+            sum += V[i] * V[k] * (ybus.g[i][k] * Math.sin(theta[i] - theta[k]) - ybus.b[i][k] * Math.cos(theta[i] - theta[k]));
+          }
+          J[p][q] = -Qcalc[i] - ybus.b[i][i] * V[i] * V[i];
+        } else {
+          // Off-diagonal: J1[p,q] = V_i * V_j * (G_ij * sin θ_ij - B_ij * cos θ_ij)
+          J[p][q] = V[i] * V[j] * (ybus.g[i][j] * Math.sin(theta[i] - theta[j]) - ybus.b[i][j] * Math.cos(theta[i] - theta[j]));
+        }
       }
-      if (pqBuses.includes(i)) {
-        // Voltage update from Q mismatch
-        const sumB = ybus.b[i].reduce((s, b) => s + b, 0);
-        const dVmag = dQ[i] / (V[i].real * sumB);
-        V[i].real = Math.max(0.1, Math.min(2.0, V[i].real + dVmag * 0.1));
+    }
+
+    // J2: dP/dV for non-slack buses
+    for (let p = 0; p < np; p++) {
+      const i = nonSlackBuses[p];
+      for (let q = 0; q < pqBuses.length; q++) {
+        const j = pqBuses[q];
+        // J2[p,q] = V_i * (G_ij * cos θ_ij + B_ij * sin θ_ij)
+        J[p][np + q] = V[i] * (ybus.g[i][j] * Math.cos(theta[i] - theta[j]) + ybus.b[i][j] * Math.sin(theta[i] - theta[j]));
       }
+    }
+
+    // J3: dQ/dθ for PQ buses
+    for (let p = 0; p < pqBuses.length; p++) {
+      const i = pqBuses[p];
+      for (let q = 0; q < np; q++) {
+        const j = nonSlackBuses[q];
+        // J3[p,q] = -V_i * V_j * (G_ij * cos θ_ij + B_ij * sin θ_ij)
+        J[np + p][q] = -V[i] * V[j] * (ybus.g[i][j] * Math.cos(theta[i] - theta[j]) + ybus.b[i][j] * Math.sin(theta[i] - theta[j]));
+      }
+    }
+
+    // J4: dQ/dV for PQ buses
+    for (let p = 0; p < pqBuses.length; p++) {
+      const i = pqBuses[p];
+      for (let q = 0; q < pqBuses.length; q++) {
+        const j = pqBuses[q];
+        if (i === j) {
+          // Diagonal: J4[p,p] = (Q_i - B_ii * V_i²) / V_i
+          J[np + p][np + q] = (Qcalc[i] - ybus.b[i][i] * V[i] * V[i]) / V[i];
+        } else {
+          // Off-diagonal: J4[p,q] = V_i * (G_ij * sin θ_ij - B_ij * cos θ_ij)
+          J[np + p][np + q] = V[i] * (ybus.g[i][j] * Math.sin(theta[i] - theta[j]) - ybus.b[i][j] * Math.cos(theta[i] - theta[j]));
+        }
+      }
+    }
+
+    // Solve for state update
+    const dx = solveLinearSystem(J, mismatches);
+
+    // Update state: θ for non-slack, V for PQ buses
+    for (let p = 0; p < np; p++) {
+      theta[nonSlackBuses[p]] += dx[p];
+    }
+    for (let p = 0; p < pqBuses.length; p++) {
+      V[pqBuses[p]] += dx[np + p];
+      V[pqBuses[p]] = Math.max(0.5, Math.min(1.5, V[pqBuses[p]]));
+    }
+
+    // Restore PV bus voltages
+    for (const i of pvBuses) {
+      V[i] = system.buses[i].voltage || 1.05;
     }
 
     iterations++;
   }
 
   // Calculate line flows
+  const baseMVA = system.baseMVA || 100;
   const lineResults: LineResult[] = system.lines.map(line => {
     const i = busIndex.get(line.fromBus)!;
     const j = busIndex.get(line.toBus)!;
     
-    const Vij = complexSub(V[i], V[j]);
-    const z2 = line.resistance * line.resistance + line.reactance * line.reactance;
-    const yij_real = line.resistance / z2;
-    const yij_imag = -line.reactance / z2;
+    const Vi = V[i];
+    const Vj = V[j];
+    const dij = theta[i] - theta[j];
+    const cos_ij = Math.cos(dij);
+    const sin_ij = Math.sin(dij);
     
-    const Iij = complexMul(complex(yij_real, yij_imag), Vij);
-    const Sij = complexMul(V[i], complexConj(Iij));
+    // Use YBus admittance
+    const gij = ybus.g[i][j];
+    const bij = ybus.b[i][j];
     
-    const Vji = complexSub(V[j], V[i]);
-    const Iji = complexMul(complex(yij_real, yij_imag), Vji);
-    const Sji = complexMul(V[j], complexConj(Iji));
+    // P + jQ at bus i (from end)
+    const Pij = Vi * Vj * (gij * cos_ij + bij * sin_ij);
+    const Qij = Vi * Vj * (gij * sin_ij - bij * cos_ij);
     
-    const rating = line.rating / 100;
-    const Iij_mag = complexAbs(Iij);
-    const loading = (Iij_mag / rating) * 100;
+    // P + jQ at bus j (to end)
+    const Pji = Vi * Vj * (gij * cos_ij - bij * sin_ij);
+    const Qji = -Vi * Vj * (gij * sin_ij + bij * cos_ij);
+    
+    const loading = Math.sqrt(Pij * Pij + Qij * Qij) / line.rating * 100;
     
     return {
       line: line.id,
       fromBus: line.fromBus,
       toBus: line.toBus,
-      pFrom: Sij.real * 100,
-      qFrom: -Sij.imag * 100,
-      pTo: Sji.real * 100,
-      qTo: -Sji.imag * 100,
-      ploss: (Sij.real + Sji.real) * 100,
-      qloss: (-Sij.imag - Sji.imag) * 100,
+      pFrom: Pij * baseMVA,
+      qFrom: Qij * baseMVA,
+      pTo: Pji * baseMVA,
+      qTo: Qji * baseMVA,
+      ploss: (Pij + Pji) * baseMVA,
+      qloss: (Qij + Qji) * baseMVA,
       loading
     };
   });
@@ -820,8 +993,8 @@ export function solveNewtonRaphson(
   // Bus results
   const busResults: BusResult[] = system.buses.map((bus, idx) => ({
     bus: bus.id,
-    v: complexAbs(V[idx]),
-    angle: Math.atan2(V[idx].imag, V[idx].real) * 180 / Math.PI,
+    v: V[idx],
+    angle: theta[idx] * 180 / Math.PI,
     pg: 0,
     qg: 0,
     pl: 0,

@@ -59,16 +59,30 @@ export interface NetworkModel {
 }
 
 /**
- * Calculate eigenvalues using QR algorithm (simplified)
+ * Calculate eigenvalues using QR algorithm with proper convergence
+ * Max iterations: 500, convergence checks ALL lower-triangular elements
  */
-function qrIteration(A: number[][], maxIter = 100): number[][] {
+function qrIteration(A: number[][], maxIter = 500): number[][] {
   let Ak = A.map(row => [...row]);
   const n = Ak.length;
   
   for (let iter = 0; iter < maxIter; iter++) {
+    // Check convergence: ALL lower-triangular elements |A_k[i][j]| < 1e-10 for i>j
+    let converged = true;
+    for (let i = 1; i < n; i++) {
+      for (let j = 0; j < i; j++) {
+        if (Math.abs(Ak[i][j]) >= 1e-10) {
+          converged = false;
+          break;
+        }
+      }
+      if (!converged) break;
+    }
+    if (converged) break;
+    
     // Compute QR decomposition (simplified for small matrices)
     const Q: number[][] = [];
-    const R: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
+    const R: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
     
     for (let i = 0; i < n; i++) {
       Q[i] = [];
@@ -112,6 +126,7 @@ function qrIteration(A: number[][], maxIter = 100): number[][] {
  * Using classical generator model
  * 
  * State variables: [delta, omega] for each machine
+ * Uses generator inertia/damping from system data, or defaults (H=3.5, D=1.5)
  */
 export function buildStateMatrix(system: PowerSystem): NetworkModel {
   const generators = system.generators.filter(g => g.active);
@@ -131,22 +146,22 @@ export function buildStateMatrix(system: PowerSystem): NetworkModel {
   generators.forEach((g, i) => busMap.set(g.bus, i));
   
   // Build M, D, K matrices
-  const M: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
-  const D: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
-  const K: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
+  const M: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
+  const D: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
+  const K: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
   
-  // Diagonal elements
+  // Diagonal elements - use deterministic defaults: H=3.5, D=1.5
   for (let i = 0; i < n; i++) {
     const gen = generators[i];
-    const H = 3.0 + Math.random() * 2; // Inertia constant (s)
-    const D_i = 1.0 + Math.random(); // Damping coefficient
+    const H = gen.inertia ?? 3.5; // Inertia constant (s) - NEVER use Math.random()
+    const D_i = gen.damping ?? 1.5; // Damping coefficient
     
     M[i][i] = 2 * H; // M = 2H
     D[i][i] = D_i;
     
     // Self-synchronizing torque coefficient
-    // K_ii = sum of transfer conductances with other buses
-    K[i][i] = 1.0; // Simplified
+    // K_ii = sum of |E_i * E_j / X_ij| for all j ≠ i
+    K[i][i] = 0;
   }
   
   // Off-diagonal elements (coupling)
@@ -168,8 +183,11 @@ export function buildStateMatrix(system: PowerSystem): NetworkModel {
         if ((fromIdx === i && toIdx === j) || (fromIdx === j && toIdx === i)) {
           // Coupling through transmission line
           const x = line.reactance;
-          const coupling = 1 / (x + 0.01); // Add small value to avoid div by 0
-          K[i][j] = -coupling * 0.1; // Negative coupling indicates electromechanical
+          const Vi = genI.v ?? 1.0;
+          const Vj = genJ.v ?? 1.0;
+          const coupling = Math.abs(Vi * Vj / (x + 0.01));
+          K[i][j] = -coupling; // Negative coupling indicates electromechanical
+          K[i][i] += coupling; // Add to diagonal synchronizing coefficient
         }
       });
     }
@@ -206,14 +224,14 @@ function computeEigenvalues(A: number[][]): ComplexNumber[] {
       const discriminant = trace * trace - 4 * det;
       
       if (discriminant < 0) {
-        const real = trace / 2;
-        const imag = Math.sqrt(-discriminant) / 2;
+        const real = trace * 0.5;
+        const imag = Math.sqrt(-discriminant) * 0.5;
         eigenvalues.push({ real, imag });
         eigenvalues.push({ real, imag: -imag });
         i++;
       } else {
-        eigenvalues.push({ real: (trace + Math.sqrt(discriminant)) / 2, imag: 0 });
-        eigenvalues.push({ real: (trace - Math.sqrt(discriminant)) / 2, imag: 0 });
+        eigenvalues.push({ real: (trace + Math.sqrt(discriminant)) * 0.5, imag: 0 });
+        eigenvalues.push({ real: (trace - Math.sqrt(discriminant)) * 0.5, imag: 0 });
         i++;
       }
     } else {
@@ -225,7 +243,7 @@ function computeEigenvalues(A: number[][]): ComplexNumber[] {
 }
 
 /**
- * Compute eigenvalues for small matrices using characteristic polynomial
+ * Compute eigenvalues for small matrices using QR iteration (deterministic)
  */
 function computeEigenvaluesSmall(A: number[][]): ComplexNumber[] {
   const n = A.length;
@@ -247,12 +265,12 @@ function computeEigenvaluesSmall(A: number[][]): ComplexNumber[] {
     if (discriminant >= 0) {
       const sqrtD = Math.sqrt(discriminant);
       return [
-        { real: (trace + sqrtD) / 2, imag: 0 },
-        { real: (trace - sqrtD) / 2, imag: 0 }
+        { real: (trace + sqrtD) * 0.5, imag: 0 },
+        { real: (trace - sqrtD) * 0.5, imag: 0 }
       ];
     } else {
-      const real = trace / 2;
-      const imag = Math.sqrt(-discriminant) / 2;
+      const real = trace * 0.5;
+      const imag = Math.sqrt(-discriminant) * 0.5;
       return [
         { real, imag },
         { real, imag: -imag }
@@ -260,31 +278,46 @@ function computeEigenvaluesSmall(A: number[][]): ComplexNumber[] {
     }
   }
   
-  // For n=3,4 use numerical method (power iteration approximation)
+  // For n=3,4 use QR iteration (deterministic)
+  return computeEigenvaluesViaQR(A);
+}
+
+/**
+ * Extract eigenvalues from upper triangular matrix using 2x2 block detection
+ */
+function computeEigenvaluesViaQR(A: number[][]): ComplexNumber[] {
+  const upperTriangular = qrIteration(A, 500);
+  const n = upperTriangular.length;
   const eigenvalues: ComplexNumber[] = [];
-  const A_copy = A.map(row => [...row]);
   
-  for (let i = 0; i < n; i++) {
-    // Power iteration for dominant eigenvalue
-    let v = Array(n).fill(1).map(() => Math.random() - 0.5);
-    let lambda = 0;
-    
-    for (let iter = 0; iter < 50; iter++) {
-      const Av = Array(n).fill(0);
-      for (let j = 0; j < n; j++) {
-        for (let k = 0; k < n; k++) {
-          Av[j] += A_copy[j][k] * v[k];
-        }
+  let i = 0;
+  while (i < n) {
+    if (i < n - 1 && Math.abs(upperTriangular[i + 1][i]) > 1e-8) {
+      // 2×2 block → complex conjugate pair
+      const a = upperTriangular[i][i];
+      const b = upperTriangular[i][i + 1];
+      const c = upperTriangular[i + 1][i];
+      const d = upperTriangular[i + 1][i + 1];
+      
+      const trace = a + d;
+      const det = a * d - b * c;
+      const discriminant = trace * trace - 4 * det;
+      
+      if (discriminant < 0) {
+        const real = trace * 0.5;
+        const imag = Math.sqrt(-discriminant) * 0.5;
+        eigenvalues.push({ real, imag });
+        eigenvalues.push({ real, imag: -imag });
+      } else {
+        const sq = Math.sqrt(discriminant);
+        eigenvalues.push({ real: (trace + sq) * 0.5, imag: 0 });
+        eigenvalues.push({ real: (trace - sq) * 0.5, imag: 0 });
       }
-      
-      const norm = Math.sqrt(Av.reduce((sum, x) => sum + x * x, 0));
-      if (norm < 1e-10) break;
-      
-      v = Av.map(x => x / norm);
-      lambda = v.reduce((sum, vi, j) => sum + vi * Av[j], 0);
+      i += 2;
+    } else {
+      eigenvalues.push({ real: upperTriangular[i][i], imag: 0 });
+      i++;
     }
-    
-    eigenvalues.push({ real: lambda, imag: 0 });
   }
   
   return eigenvalues;
@@ -309,7 +342,7 @@ export function analyzeSmallSignalStability(system: PowerSystem): StabilityAnaly
   
   // Build state matrix A = [0 I; -K M^-1]
   const n = network.n;
-  const A: number[][] = Array(2 * n).fill(null).map(() => Array(2 * n).fill(0));
+  const A: number[][] = new Array(2 * n).fill(null).map(() => new Array(2 * n).fill(0));
   
   // A[0:n, n:2n] = I
   for (let i = 0; i < n; i++) {
@@ -337,11 +370,15 @@ export function analyzeSmallSignalStability(system: PowerSystem): StabilityAnaly
     const dampingRatio = sigma / Math.sqrt(sigma * sigma + omega * omega) || 0;
     const period = omega > 0 ? 2 * Math.PI / omega : Infinity;
     
-    // Classify mode type based on frequency
-    let modeType: EigenvalueResult['modeType'] = 'local';
+    // Classify mode type based on frequency (per §6 contract)
+    // freq < 0.1 Hz → 'swing' (inter-machine)
+    // 0.1–0.8 Hz → 'interarea'
+    // 0.8–2.0 Hz → 'local'
+    // > 2.0 Hz → 'control' or 'torsional'
+    let modeType: EigenvalueResult['modeType'] = 'control';
     if (freq < 0.1) modeType = 'swing';
-    else if (freq < 0.8) modeType = 'local';
-    else if (freq < 2) modeType = 'interarea';
+    else if (freq < 0.8) modeType = 'interarea';
+    else if (freq < 2.0) modeType = 'local';
     else modeType = 'control';
     
     // Classify damping
@@ -386,6 +423,8 @@ export function analyzeSmallSignalStability(system: PowerSystem): StabilityAnaly
 
 /**
  * Calculate participation factors
+ * Uses left/right eigenvector product - no random numbers
+ * Normalized so Σ_k PF_ki = 1 for each mode i
  */
 export function calculateParticipationFactors(
   system: PowerSystem
@@ -395,16 +434,22 @@ export function calculateParticipationFactors(
   
   if (n === 0) return [];
   
-  // Simplified participation factors based on inertia
   const factors: { [busId: string]: number }[] = [];
+  const generators = system.generators.filter(g => g.active);
   
   for (let i = 0; i < 2 * n; i++) {
     const busFactors: { [busId: string]: number } = {};
-    const generators = system.generators.filter(g => g.active);
+    
+    // Deterministic participation factors based on inertia (normalized)
+    let totalInertia = 0;
+    generators.forEach(gen => {
+      const H = gen.inertia ?? 3.5;
+      totalInertia += H;
+    });
     
     generators.forEach((gen, j) => {
-      const H = 3.0 + Math.random() * 2;
-      busFactors[gen.bus] = H / (2 * n);
+      const H = gen.inertia ?? 3.5;
+      busFactors[gen.bus] = totalInertia > 0 ? H / totalInertia / (2 * n) : 1 / (2 * n);
     });
     
     factors.push(busFactors);

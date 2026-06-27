@@ -1,6 +1,7 @@
 /**
  * Fault Analysis Module
  * Symmetrical and unsymmetrical fault calculations
+ * Uses LU-once Z-bus inversion per §5 contract
  */
 
 import { PowerSystem } from '@/types';
@@ -65,18 +66,126 @@ export interface FaultStudyResult {
 }
 
 /**
- * Calculate impedance matrix for fault analysis
+ * LU Decomposition with partial pivoting
+ * Returns L, U matrices and permutation array
  */
-function buildZMatrix(ybus: ReturnType<typeof buildYBus>): number[][] {
+function luDecompose(A: number[][]): { L: number[][]; U: number[][]; perm: number[] } {
+  const n = A.length;
+  const L: number[][] = new Array(n).fill(null).map(() => new Array(n).fill(0));
+  const U: number[][] = A.map(row => [...row]);
+  const perm: number[] = new Array(n).fill(0).map((_, i) => i);
+  
+  for (let col = 0; col < n; col++) {
+    // Find pivot
+    let maxRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(U[row][col]) > Math.abs(U[maxRow][col])) {
+        maxRow = row;
+      }
+    }
+    
+    // Swap rows in U and perm
+    if (maxRow !== col) {
+      [U[col], U[maxRow]] = [U[maxRow], U[col]];
+      [perm[col], perm[maxRow]] = [perm[maxRow], perm[col]];
+    }
+    
+    // Check for singular matrix
+    if (Math.abs(U[col][col]) < 1e-12) {
+      U[col][col] = 1e-12;
+    }
+    
+    // LU decomposition
+    for (let row = col + 1; row < n; row++) {
+      L[row][col] = U[row][col] / U[col][col];
+      for (let k = col; k < n; k++) {
+        U[row][k] -= L[row][col] * U[col][k];
+      }
+    }
+  }
+  
+  return { L, U, perm };
+}
+
+/**
+ * Solve Ax = b using LU factors with permutation
+ */
+function luSolve(L: number[][], U: number[][], perm: number[], b: number[]): number[] {
+  const n = b.length;
+  
+  // Apply permutation
+  const pb: number[] = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    pb[i] = b[perm[i]];
+  }
+  
+  // Forward substitution: Ly = Pb
+  const y: number[] = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    y[i] = pb[i];
+    for (let j = 0; j < i; j++) {
+      y[i] -= L[i][j] * y[j];
+    }
+  }
+  
+  // Back substitution: Ux = y
+  const x: number[] = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    x[i] = y[i];
+    for (let j = i + 1; j < n; j++) {
+      x[i] -= U[i][j] * x[j];
+    }
+    x[i] /= U[i][i];
+  }
+  
+  return x;
+}
+
+/**
+ * Build complex Z-bus matrix using LU-once approach
+ * Per §5 contract: LU-factor once, solve n times
+ * Returns array of complex numbers {real, imag}
+ */
+function buildZMatrix(ybus: ReturnType<typeof buildYBus>): { real: number; imag: number }[][] {
   const n = ybus.n;
-  const Z: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
+  
+  // Step 1: Build 2n×2n real matrix A = [G -B; B G]
+  const size = 2 * n;
+  const A: number[][] = new Array(size).fill(null).map(() => new Array(size).fill(0));
   
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      const gij = ybus.g[i][j];
-      const bij = ybus.b[i][j];
-      const yijMag = Math.sqrt(gij * gij + bij * bij);
-      Z[i][j] = yijMag !== 0 ? 1 / yijMag : 1e10;
+      // Top-left: G
+      A[i][j] = ybus.g[i][j];
+      // Top-right: -B
+      A[i][j + n] = -ybus.b[i][j];
+      // Bottom-left: B
+      A[i + n][j] = ybus.b[i][j];
+      // Bottom-right: G
+      A[i + n][j + n] = ybus.g[i][j];
+    }
+  }
+  
+  // Step 2: LU-factor A ONCE (O((2n)³))
+  const { L, U, perm } = luDecompose(A);
+  
+  // Step 3: For each column k, solve A·x_k = e_k (O((2n)²) per column)
+  // Z[i][k] = x_k[i] + j·x_k[n+i] (complex)
+  const Z: { real: number; imag: number }[][] = new Array(n).fill(null).map(() =>
+    new Array(n).fill(null).map(() => ({ real: 0, imag: 0 }))
+  );
+  
+  for (let k = 0; k < n; k++) {
+    // RHS: e_k (k-th standard basis vector)
+    const rhs: number[] = new Array(size).fill(0);
+    rhs[k] = 1;
+    
+    // Solve using stored LU factors
+    const x = luSolve(L, U, perm, rhs);
+    
+    // Extract complex impedance: Z[i][k] = x[i] + j·x[n+i]
+    for (let i = 0; i < n; i++) {
+      Z[i][k] = { real: x[i], imag: x[n + i] };
     }
   }
   
@@ -85,6 +194,7 @@ function buildZMatrix(ybus: ReturnType<typeof buildYBus>): number[][] {
 
 /**
  * Calculate three-phase fault current
+ * Per §5 contract: 3-Phase symmetric fault: I_f = V_f / Z1_kk
  */
 export function calculateThreePhaseFault(
   system: PowerSystem,
@@ -104,7 +214,9 @@ export function calculateThreePhaseFault(
   const bus = system.buses[faultIdx];
   const prefaultVoltage = bus.voltage || 1.0;
   
-  const Zth = Z[faultIdx][faultIdx] || 0.1;
+  // Z1_kk = Thevenin impedance at faulted bus (positive sequence)
+  const Zkk = Z[faultIdx][faultIdx];
+  const Zth = Math.sqrt(Zkk.real * Zkk.real + Zkk.imag * Zkk.imag) || 0.1;
   const If = prefaultVoltage / Zth;
   
   return {
@@ -118,13 +230,15 @@ export function calculateThreePhaseFault(
       I1: If, I2: 0, I0: 0,
       V1: 0, V2: 0, V0: 0
     },
-    faultMVA: (If * prefaultVoltage * (system.baseMVA || 100)) / 100,
+    faultMVA: If * prefaultVoltage * (system.baseMVA || 100),
     ctRating: If * 1.2
   };
 }
 
 /**
  * Calculate line-to-ground fault current
+ * Per §5 contract: Single Line-to-Ground (a-phase):
+ *   I_a1 = V_f / (Z1+Z2+Z0+3Rf) where Z2=Z1, Z0=0.5·Z1
  */
 export function calculateLineToGroundFault(
   system: PowerSystem,
@@ -145,12 +259,15 @@ export function calculateLineToGroundFault(
   const bus = system.buses[faultIdx];
   const prefaultVoltage = bus.voltage || 1.0;
   
-  const Z1 = Math.abs(Z[faultIdx][faultIdx]) || 0.1;
+  // Get Thevenin impedance
+  const Zkk = Z[faultIdx][faultIdx];
+  const Z1 = Math.sqrt(Zkk.real * Zkk.real + Zkk.imag * Zkk.imag) || 0.1;
   const Z2 = Z1;
   const Z0 = Z1 * 0.5;
   
   const Ztotal = Z1 + Z2 + Z0 + 3 * Rf;
-  const Ia = prefaultVoltage / Ztotal;
+  const I_a1 = prefaultVoltage / Ztotal;
+  const Ia = 3 * I_a1;  // I_a = 3 * I_a1
   
   return {
     faultType: 'line-to-ground',
@@ -160,15 +277,19 @@ export function calculateLineToGroundFault(
     faultCurrent: Math.abs(Ia),
     symmetricalComponents: {
       Ia, Ib: 0, Ic: 0,
-      I1: Ia, I2: 0, I0: Ia,
+      I1: I_a1, I2: 0, I0: I_a1,
       V1: 0, V2: 0, V0: 0
     },
-    faultMVA: (Math.abs(Ia) * prefaultVoltage * (system.baseMVA || 100)) / 100
+    faultMVA: Math.abs(Ia) * prefaultVoltage * (system.baseMVA || 100)
   };
 }
 
 /**
  * Calculate line-to-line fault current
+ * Per §5 contract: Line-to-Line (b-c phases):
+ *   I_b1 = V_f / (Z1+Z2+Rf)
+ *   I_b = -j√3·I_b1
+ *   |I_b| = √3·|I_b1|
  */
 export function calculateLineToLineFault(
   system: PowerSystem,
@@ -189,31 +310,35 @@ export function calculateLineToLineFault(
   const bus = system.buses[faultIdx];
   const prefaultVoltage = bus.voltage || 1.0;
   
-  const Z1 = Math.abs(Z[faultIdx][faultIdx]) || 0.1;
+  const Zkk = Z[faultIdx][faultIdx];
+  const Z1 = Math.sqrt(Zkk.real * Zkk.real + Zkk.imag * Zkk.imag) || 0.1;
   const Z2 = Z1;
   const Ztotal = Z1 + Z2 + Rf;
   const I1 = prefaultVoltage / Ztotal;
   
   const sqrt3 = Math.sqrt(3);
-  const Ib = -I1 * sqrt3;
+  const Ib = -I1 * sqrt3;  // I_b = -j√3·I_b1, magnitude is √3·|I_b1|
   
   return {
     faultType: 'line-to-line',
     faultBus: faultBusId,
     prefault: { voltage: prefaultVoltage, angle: 0 },
-    postfault: { voltage: prefaultVoltage / 2, angle: 0 },
+    postfault: { voltage: prefaultVoltage * 0.5, angle: 0 },
     faultCurrent: Math.abs(Ib),
     symmetricalComponents: {
       Ia: 0, Ib, Ic: -Ib,
       I1, I2: -I1, I0: 0,
-      V1: prefaultVoltage / 2, V2: prefaultVoltage / 2, V0: 0
+      V1: prefaultVoltage * 0.5, V2: prefaultVoltage * 0.5, V0: 0
     },
-    faultMVA: (Math.abs(Ib) * prefaultVoltage * (system.baseMVA || 100)) / 100
+    faultMVA: Math.abs(Ib) * prefaultVoltage * (system.baseMVA || 100)
   };
 }
 
 /**
  * Calculate double line-to-ground fault current
+ * Per §5 contract: Double Line-to-Ground (b-c to ground):
+ *   I_a1 = V_f / (Z1 + Z2·Z0/(Z2+Z0) + Rf)
+ *   Dominant fault current = |3·I_a0|
  */
 export function calculateDoubleLineToGroundFault(
   system: PowerSystem,
@@ -234,30 +359,31 @@ export function calculateDoubleLineToGroundFault(
   const bus = system.buses[faultIdx];
   const prefaultVoltage = bus.voltage || 1.0;
   
-  const Z1 = Math.abs(Z[faultIdx][faultIdx]) || 0.1;
+  const Zkk = Z[faultIdx][faultIdx];
+  const Z1 = Math.sqrt(Zkk.real * Zkk.real + Zkk.imag * Zkk.imag) || 0.1;
   const Z2 = Z1;
   const Z0 = Z1 * 0.5;
   
   const Zeq = (Z2 * Z0) / (Z2 + Z0);
-  const I1 = prefaultVoltage / (Z1 + Zeq + Rf);
-  const I2 = -I1 * Z0 / (Z2 + Z0);
-  const I0 = -I1 * Z2 / (Z2 + Z0);
+  const I_a1 = prefaultVoltage / (Z1 + Zeq + Rf);
+  const I_a2 = -I_a1 * Z0 / (Z2 + Z0);
+  const I_a0 = -I_a1 * Z2 / (Z2 + Z0);
   
   const sqrt3 = Math.sqrt(3);
-  const Ib = sqrt3 * (I1 * Zeq + I2 * Z0) / Z0;
+  const Ib = sqrt3 * (I_a1 * Zeq + I_a2 * Z0) / Z0;
   
   return {
     faultType: 'double-line-to-ground',
     faultBus: faultBusId,
     prefault: { voltage: prefaultVoltage, angle: 0 },
     postfault: { voltage: 0, angle: 0 },
-    faultCurrent: Math.abs(Ib),
+    faultCurrent: Math.abs(3 * I_a0),  // Dominant fault current = |3·I_a0|
     symmetricalComponents: {
       Ia: 0, Ib, Ic: -Ib,
-      I1, I2, I0,
+      I1: I_a1, I2: I_a2, I0: I_a0,
       V1: 0, V2: 0, V0: 0
     },
-    faultMVA: (Math.abs(Ib) * prefaultVoltage * (system.baseMVA || 100)) / 100
+    faultMVA: Math.abs(3 * I_a0) * prefaultVoltage * (system.baseMVA || 100)
   };
 }
 
