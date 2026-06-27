@@ -70,7 +70,7 @@ export function createDefaultCost(gen: Generator): GeneratorCostParams {
     bus: gen.bus,
     model: 'polynomial',
     a: 10, // $10/h base cost
-    b: 30 + Math.random() * 10, // ~$30-40/MWh
+    b: 35, // Deterministic $35/MWh
     c: 0.01, // Small quadratic term
     startup: 50,
     shutdown: 25

@@ -170,8 +170,8 @@ export function buildStateMatrix(system: PowerSystem): NetworkModel {
   // Diagonal elements
   for (let i = 0; i < n; i++) {
     const gen = generators[i];
-    const H = 3.0 + Math.random() * 2; // Inertia constant (s)
-    const D_i = 1.0 + Math.random(); // Damping coefficient
+    const H = (gen as any).inertia ?? 3.5; // Inertia constant (s) - deterministic default
+    const D_i = (gen as any).damping ?? 1.5; // Damping coefficient - deterministic default
     
     M[i][i] = 2 * H; // M = 2H
     D[i][i] = D_i;
@@ -297,8 +297,8 @@ function computeEigenvaluesSmall(A: number[][]): ComplexNumber[] {
   const A_copy = A.map(row => [...row]);
   
   for (let i = 0; i < n; i++) {
-    // Power iteration for dominant eigenvalue
-    let v = Array(n).fill(1).map(() => Math.random() - 0.5);
+    // Power iteration for dominant eigenvalue (deterministic initial vector)
+    let v = Array(n).fill(0).map((_, idx) => (idx === i ? 1 : 0));
     let lambda = 0;
     
     for (let iter = 0; iter < 50; iter++) {
@@ -435,7 +435,7 @@ export function calculateParticipationFactors(
     const generators = system.generators.filter(g => g.active);
     
     generators.forEach((gen, j) => {
-      const H = 3.0 + Math.random() * 2;
+      const H = (gen as any).inertia ?? 3.5; // deterministic default
       busFactors[gen.bus] = H / (2 * n);
     });
     

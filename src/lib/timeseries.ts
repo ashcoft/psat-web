@@ -77,8 +77,8 @@ export function createGeneratorModels(system: PowerSystem): GeneratorModel[] {
     .map(g => ({
       id: g.id,
       bus: g.bus,
-      H: 3.0 + Math.random() * 2, // Default H: 3-5s
-      D: 1.0 + Math.random() * 1,  // Default D: 1-2 pu
+      H: (g as any).inertia ?? 3.5, // Deterministic default H
+      D: (g as any).damping ?? 1.5,  // Deterministic default D
       Pm: g.pg / (system.baseMVA || 100),
       Pe: 0,
       omega: 1.0,
@@ -223,6 +223,7 @@ export function runTimeDomainSimulation(
   let t = cfg.tStart;
   let nextOutputTime = cfg.tStart;
   let lastOutputIdx = 0;
+  let loadChangeApplied = false;
   
   while (t <= cfg.tEnd) {
     // Apply events
@@ -232,12 +233,13 @@ export function runTimeDomainSimulation(
       V.set(faultBus, 0.1);
     }
     
-    if (cfg.loadChangeTime && t >= cfg.loadChangeTime) {
-      // Apply load change
+    if (cfg.loadChangeTime && t >= cfg.loadChangeTime && !loadChangeApplied) {
+      // Apply load change (only once)
       const factor = cfg.loadChangeFactor || 1.2;
       generators.forEach(g => {
         g.Pm *= factor;
       });
+      loadChangeApplied = true;
     }
     
     // Calculate electrical power for each generator

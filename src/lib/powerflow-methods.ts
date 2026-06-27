@@ -151,17 +151,29 @@ export function solveDC(system: PowerSystem): PowerFlowResult {
     if (idx !== undefined) P[idx] -= load.pl;
   });
 
-  // Build B' matrix (susceptance only, DC approximation)
+  // Build B' matrix directly from branch reactances (DC approximation: B' = 1/x)
   const B: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
-  for (let i = 0; i < n; i++) {
-    B[i][i] = ybus.b[i].reduce((sum, val) => sum + val, 0);
+  for (const line of system.lines) {
+    if (!line.active) continue;
+    const i = busIndex.get(line.fromBus);
+    const j = busIndex.get(line.toBus);
+    if (i === undefined || j === undefined) continue;
+    const b = 1.0 / line.reactance;
+    B[i][j] -= b;
+    B[j][i] -= b;
+    B[i][i] += b;
+    B[j][j] += b;
   }
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      if (i !== j && ybus.b[i][j] !== 0) {
-        B[i][j] = ybus.b[i][j];
-      }
-    }
+  for (const txf of (system.transformers || [])) {
+    if (!txf.active) continue;
+    const i = busIndex.get(txf.fromBus);
+    const j = busIndex.get(txf.toBus);
+    if (i === undefined || j === undefined) continue;
+    const b = 1.0 / txf.reactance;
+    B[i][j] -= b;
+    B[j][i] -= b;
+    B[i][i] += b;
+    B[j][j] += b;
   }
 
   // Remove slack bus row and column
@@ -298,38 +310,29 @@ export function solveFastDecoupled(system: PowerSystem, tolerance = 1e-6, maxIte
 
   // Build B': use -1/x for lines (DC approximation)
   // B' has same dimension as P equations (all buses except slack)
-  // Remove transformers (handle separately via their reactance)
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue;
-      // B'_ij = -1/x_ij (use only lines/transformers directly)
-      let found = false;
-      for (const line of system.lines) {
-        if (!line.active) continue;
-        const fi = busIndex.get(line.fromBus);
-        const ti = busIndex.get(line.toBus);
-        if ((fi === i && ti === j) || (fi === j && ti === i)) {
-          const bVal = -1.0 / line.reactance;
-          Bp[i][j] = bVal;
-          Bp[i][i] -= bVal;
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        for (const txf of (system.transformers || [])) {
-          if (!txf.active) continue;
-          const fi = busIndex.get(txf.fromBus);
-          const ti = busIndex.get(txf.toBus);
-          if ((fi === i && ti === j) || (fi === j && ti === i)) {
-            const bVal = -1.0 / txf.reactance;
-            Bp[i][j] = bVal;
-            Bp[i][i] -= bVal;
-            break;
-          }
-        }
-      }
-    }
+  // Handle multiple parallel branches by accumulating susceptance
+  for (const line of system.lines) {
+    if (!line.active) continue;
+    const fi = busIndex.get(line.fromBus);
+    const ti = busIndex.get(line.toBus);
+    if (fi === undefined || ti === undefined) continue;
+    const bVal = -1.0 / line.reactance;
+    // Accumulate for parallel branches
+    Bp[fi][ti] += bVal;
+    Bp[ti][fi] += bVal;
+    Bp[fi][fi] -= bVal;
+    Bp[ti][ti] -= bVal;
+  }
+  for (const txf of (system.transformers || [])) {
+    if (!txf.active) continue;
+    const fi = busIndex.get(txf.fromBus);
+    const ti = busIndex.get(txf.toBus);
+    if (fi === undefined || ti === undefined) continue;
+    const bVal = -1.0 / txf.reactance;
+    Bp[fi][ti] += bVal;
+    Bp[ti][fi] += bVal;
+    Bp[fi][fi] -= bVal;
+    Bp[ti][ti] -= bVal;
   }
 
   // Build B'': use susceptance from YBus for Q-V equations (only PQ buses)
@@ -338,8 +341,9 @@ export function solveFastDecoupled(system: PowerSystem, tolerance = 1e-6, maxIte
       if (i === j) continue;
       if (ybus.b[i][j] !== 0) {
         // B''_ij = -b_ij (negative of susceptance from YBus)
+        // Accumulate for parallel branches
         const bVal = -ybus.b[i][j];
-        Bpp[i][j] = bVal;
+        Bpp[i][j] += bVal;
         Bpp[i][i] -= bVal;
       }
     }
@@ -957,7 +961,11 @@ export function solveNewtonRaphson(
   });
   if (slackIdx === -1) {
     slackIdx = 0;
-    // Move bus 0 to pq since it's treated as load bus
+    // Remove bus 0 from pqBuses/pvBuses since it's now the slack bus
+    const pqPos = pqBuses.indexOf(0);
+    if (pqPos !== -1) pqBuses.splice(pqPos, 1);
+    const pvPos = pvBuses.indexOf(0);
+    if (pvPos !== -1) pvBuses.splice(pvPos, 1);
   }
 
   const npBuses = [...Array(n).keys()].filter(i => i !== slackIdx);
@@ -977,13 +985,7 @@ export function solveNewtonRaphson(
       Qspec[idx] -= load.ql;
     }
   });
-  // Add shunt reactive contribution
-  system.shunts?.forEach(shunt => {
-    const idx = busIndex.get(shunt.bus);
-    if (idx !== undefined) {
-      Qspec[idx] -= shunt.b * Vmag[idx] * Vmag[idx];
-    }
-  });
+  // Note: shunt reactive is already included in YBus diagonal (Qcalc from YBus)
 
   let converged = false;
   let iterations = 0;
@@ -1184,17 +1186,19 @@ export function solveNewtonRaphson(
  */
 export function solvePowerFlow(
   system: PowerSystem, 
-  method: 'Newton-Raphson' | 'Fast-Decoupled' | 'DC' | 'Gauss-Seidel' = 'Newton-Raphson'
+  method: 'Newton-Raphson' | 'Fast-Decoupled' | 'DC' | 'Gauss-Seidel' = 'Newton-Raphson',
+  tolerance = 1e-8,
+  maxIterations = 50
 ): PowerFlowResult {
   switch (method) {
     case 'DC':
       return solveDC(system);
     case 'Fast-Decoupled':
-      return solveFastDecoupled(system);
+      return solveFastDecoupled(system, tolerance, maxIterations);
     case 'Gauss-Seidel':
-      return solveGaussSeidel(system);
+      return solveGaussSeidel(system, tolerance, maxIterations);
     case 'Newton-Raphson':
     default:
-      return solveNewtonRaphson(system);
+      return solveNewtonRaphson(system, tolerance, maxIterations);
   }
 }
