@@ -328,10 +328,11 @@ export function solveFastDecoupled(system: PowerSystem, tolerance = 1e-6, maxIte
     const fi = busIndex.get(txf.fromBus);
     const ti = busIndex.get(txf.toBus);
     if (fi === undefined || ti === undefined) continue;
+    const a = txf.tap > 0 ? txf.tap : 1.0;
     const bVal = -1.0 / txf.reactance;
-    Bp[fi][ti] += bVal;
-    Bp[ti][fi] += bVal;
-    Bp[fi][fi] -= bVal;
+    Bp[fi][ti] += bVal / a;
+    Bp[ti][fi] += bVal / a;
+    Bp[fi][fi] -= bVal / (a * a);
     Bp[ti][ti] -= bVal;
   }
 
