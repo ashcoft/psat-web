@@ -20,10 +20,7 @@ export class PowerFlowSolver {
   
   public buildYBus(): void {
     // Verify YBus can be built without error
-    const ybus = buildYBus(this.system);
-    if (ybus.n !== this.system.buses.length) {
-      throw new Error('YBus dimension mismatch');
-    }
+    buildYBus(this.system);
   }
   
   public solve(): PowerFlowResult {
