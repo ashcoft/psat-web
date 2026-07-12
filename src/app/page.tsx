@@ -26,6 +26,7 @@ export default function Home() {
   const [output, setOutput] = useState<string[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [propertiesPanelCollapsed, setPropertiesPanelCollapsed] = useState(false);
+  const [scale, setScale] = useState(1);
   
   // Store system ref for use in callbacks
   const systemRef = useRef(system);
@@ -164,9 +165,9 @@ export default function Home() {
         onSave={() => addOutput('Save dialog triggered')}
         onUndo={() => addOutput('Undo')}
         onRedo={() => addOutput('Redo')}
-        onZoomIn={() => {}}
-        onZoomOut={() => {}}
-        onFit={() => {}}
+        onZoomIn={() => setScale(s => Math.min(5, s * 1.2))}
+        onZoomOut={() => setScale(s => Math.max(0.2, s / 1.2))}
+        onFit={() => setScale(1)}
         onRunPowerFlow={handleRunPowerFlow}
         onRunTimeSim={() => addOutput('Time simulation triggered')}
         isProcessing={isProcessing}
@@ -211,6 +212,8 @@ export default function Home() {
               onSelectLine={setSelectedLine}
               onUpdateBusPosition={handleUpdateBusPosition}
               powerFlowResults={powerFlowResults}
+              scale={scale}
+              onScaleChange={setScale}
             />
             
             {/* Canvas controls */}

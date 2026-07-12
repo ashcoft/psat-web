@@ -12,6 +12,8 @@ interface CanvasProps {
   onSelectLine: (lineId: string | null) => void;
   onUpdateBusPosition?: (busId: string, x: number, y: number) => void;
   powerFlowResults?: any;
+  scale: number;
+  onScaleChange: (scale: number) => void;
 }
 
 export default function Canvas({
@@ -21,10 +23,11 @@ export default function Canvas({
   onSelectBus,
   onSelectLine,
   onUpdateBusPosition,
-  powerFlowResults
+  powerFlowResults,
+  scale,
+  onScaleChange
 }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragTarget, setDragTarget] = useState<string | null>(null);
@@ -374,7 +377,8 @@ export default function Canvas({
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale(s => Math.max(0.2, Math.min(5, s * delta)));
+    const newScale = Math.max(0.2, Math.min(5, scale * delta));
+    onScaleChange(newScale);
   };
   
   return (
