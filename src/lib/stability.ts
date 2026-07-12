@@ -73,12 +73,15 @@ function qrIteration(A: number[][], maxIter = 100): number[][] {
     
     // Check for sub-diagonal convergence
     for (let i = 0; i < n - 1; i++) {
-      if (Math.abs(Ak[i + 1][i]) > 1e-10) {
-        converged = false;
-        break;
+    for (let i = 1; i < n; i++) {
+      for (let j = 0; j < i; j++) {
+        if (Math.abs(Ak[i][j]) > 1e-10) {
+          converged = false;
+          break;
+        }
       }
+      if (!converged) break;
     }
-    if (converged) break;
     
     // QR decomposition using Gram-Schmidt
     const Q: number[][] = Array(n).fill(null).map(() => Array(n).fill(0));
