@@ -23,7 +23,7 @@
     "browserslist": "4.28.7",
     "brace-expansion@^1": "1.1.18",
     "brace-expansion@^5": "5.0.9",
-    "js-yaml": "4.3.1"
+    "js-yaml": "4.3.2"
   },
   "dependencies": {
     "next": "^16.0.0",
