@@ -97,6 +97,28 @@ src/
 | `npm run build` | Build for production |
 | `npm run start` | Start production server |
 | `npm run lint` | Run ESLint |
+| `npm run release` | Run a release locally with semantic-release (normally done by CI) |
+
+## Releases
+
+Releases are automated with [semantic-release](https://github.com/semantic-release/semantic-release) and driven by [Conventional Commits](https://www.conventionalcommits.org/).
+
+The `Release` workflow (`.github/workflows/release.yml`) runs on every push to `main` and can also be started manually. It:
+
+1. analyses the commits since the last release to work out the next version,
+2. updates `package.json`/`package-lock.json`, writes `CHANGELOG.md` and commits them back to `main`,
+3. creates the Git tag and the GitHub Release with generated release notes.
+
+Commit messages therefore determine the version bump:
+
+| Commit message | Release |
+|----------------|---------|
+| `fix: ...` | patch (`1.0.0` → `1.0.1`) |
+| `feat: ...` | minor (`1.0.0` → `1.1.0`) |
+| `feat!: ...` or `BREAKING CHANGE:` in the body | major (`1.0.0` → `2.0.0`) |
+| `chore: ...`, `docs: ...`, `test: ...`, `ci: ...` | no release |
+
+The configuration lives in `.releaserc.json`. Publishing to the npm registry is disabled (`npmPublish: false`) — this project is an application, not a library.
 
 ## Power Flow Solver
 
