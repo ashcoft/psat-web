@@ -1,6 +1,6 @@
 {
   "name": "psat-web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Power System Analysis Toolbox - Web Edition",
   "scripts": {
     "dev": "next dev",

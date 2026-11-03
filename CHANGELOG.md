@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file. This file is generated automatically by [semantic-release](https://github.com/semantic-release/semantic-release) from the commit history.
 
+## [1.0.1](https://github.com/ashcoft/psat-web/compare/v1.0.0...v1.0.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **deps:** add missing @tailwindcss/oxide-wasm32-wasi to lockfile ([22f1d74](https://github.com/ashcoft/psat-web/commit/22f1d745b3fac11f5bbd35d12013ea79f0cf565f))
+
 # 1.0.0 (2026-10-15)
 
 
